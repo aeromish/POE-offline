@@ -3,6 +3,7 @@ import { CharacterClass, CLASS_BASE_STATS, PoEStats } from '../core/stats/Charac
 import { Socket, SkillContext, ActiveGem, SupportGem } from '../core/gems/GemTypes';
 import { FireballSkill, SplitArrowSkill } from '../core/gems/ActiveGems';
 import { GreaterMultipleProjectiles, AddedFireDamageSupport, PierceSupport } from '../core/gems/SupportGems';
+import { EquipmentItem } from '../core/items/ItemTypes';
 import { Projectile } from './Projectile';
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
@@ -67,13 +68,53 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  public compileSkills(): void {
+  public applyEquippedItemStats(item: EquipmentItem): void {
+    const base = CLASS_BASE_STATS[this.characterClass];
+    this.stats.armour = base.armour;
+    this.stats.movementSpeed = base.movementSpeed;
+    this.stats.maxLife = base.maxLife;
+    this.stats.maxEnergyShield = base.maxEnergyShield;
+
+    const allAffixes = [...item.prefixes, ...item.suffixes];
+    for (const aff of allAffixes) {
+      if (aff.statType === 'flat_life') this.stats.maxLife += aff.value;
+      if (aff.statType === 'flat_es') this.stats.maxEnergyShield += aff.value;
+      if (aff.statType === 'armour') this.stats.armour += aff.value;
+      if (aff.statType === 'movement_speed') this.stats.movementSpeed += aff.value;
+    }
+
+    this.stats.currentLife = Math.min(this.stats.currentLife, this.stats.maxLife);
+    this.compileSkills(item);
+  }
+
+  public compileSkills(equippedItem?: EquipmentItem): void {
     this.compiledSkills = [];
     const activeSockets = this.sockets.filter((s) => s.gem && 'getInitialContext' in s.gem);
+
+    let addedDmg = 0;
+    let incDmg = 0;
+    let atkSpeedPct = 0;
+    let critChance = 0;
+
+    if (equippedItem) {
+      const allAff = [...equippedItem.prefixes, ...equippedItem.suffixes];
+      for (const a of allAff) {
+        if (a.statType === 'added_damage') addedDmg += a.value;
+        if (a.statType === 'inc_damage') incDmg += a.value;
+        if (a.statType === 'attack_speed') atkSpeedPct += a.value;
+        if (a.statType === 'crit_chance') critChance += a.value;
+      }
+    }
 
     for (const activeSock of activeSockets) {
       const activeGem = activeSock.gem as ActiveGem;
       const ctx = activeGem.getInitialContext();
+
+      ctx.addedMinDamage += addedDmg;
+      ctx.addedMaxDamage += addedDmg;
+      ctx.increasedDamagePercent += incDmg;
+      ctx.attackSpeedMultiplier *= (1 + atkSpeedPct / 100);
+      ctx.critChance += critChance;
 
       const linkedSupports = this.sockets.filter(
         (s) => s.linkGroup === activeSock.linkGroup && s.gem && 'apply' in s.gem
@@ -116,18 +157,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   public takePhysicalDamage(rawDamage: number, time: number): boolean {
-    // 1. Evasion Entropy
     if (Math.random() * 100 < this.stats.evasion) {
-      return false; // Né thành công
+      return false;
     }
 
-    // 2. Armour Mitigation
     const dr = this.stats.armour / (this.stats.armour + 5 * rawDamage);
     const damage = Math.max(1, Math.round(rawDamage * (1 - Math.min(dr, 0.9))));
 
     this.lastHitTime = time;
 
-    // 3. Trừ Khiên Năng Lượng trước, Máu sau
     let remaining = damage;
     if (this.stats.energyShield > 0) {
       const absorbed = Math.min(this.stats.energyShield, remaining);
@@ -139,7 +177,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.stats.currentLife = Math.max(0, this.stats.currentLife - remaining);
     }
 
-    // Nhấp nháy đỏ báo hiệu nhận đòn
     this.setTint(0xff3333);
     this.scene.time.delayedCall(120, () => {
       if (this.active) this.clearTint();
@@ -182,13 +219,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.anims.stop();
     }
 
-    // PoE Mechanics: Hồi phục Energy Shield sau X giây không dính đòn
     if (
       this.stats.maxEnergyShield > 0 &&
       this.stats.energyShield < this.stats.maxEnergyShield &&
       time - this.lastHitTime > this.stats.esRechargeDelay * 1000
     ) {
-      const rechargeRate = (this.stats.maxEnergyShield * 0.25 * delta) / 1000; // Hồi 25% ES mỗi giây
+      const rechargeRate = (this.stats.maxEnergyShield * 0.25 * delta) / 1000;
       this.stats.energyShield = Math.min(this.stats.maxEnergyShield, this.stats.energyShield + rechargeRate);
     }
   }
