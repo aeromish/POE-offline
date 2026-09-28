@@ -17,6 +17,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private keyS!: Phaser.Input.Keyboard.Key;
   private keyD!: Phaser.Input.Keyboard.Key;
   private lastCastTime: number = 0;
+  private lastHitTime: number = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, characterClass: CharacterClass) {
     const textureKey = `player_${characterClass.toLowerCase()}`;
@@ -114,7 +115,40 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  update(): void {
+  public takePhysicalDamage(rawDamage: number, time: number): boolean {
+    // 1. Evasion Entropy
+    if (Math.random() * 100 < this.stats.evasion) {
+      return false; // Né thành công
+    }
+
+    // 2. Armour Mitigation
+    const dr = this.stats.armour / (this.stats.armour + 5 * rawDamage);
+    const damage = Math.max(1, Math.round(rawDamage * (1 - Math.min(dr, 0.9))));
+
+    this.lastHitTime = time;
+
+    // 3. Trừ Khiên Năng Lượng trước, Máu sau
+    let remaining = damage;
+    if (this.stats.energyShield > 0) {
+      const absorbed = Math.min(this.stats.energyShield, remaining);
+      this.stats.energyShield -= absorbed;
+      remaining -= absorbed;
+    }
+
+    if (remaining > 0) {
+      this.stats.currentLife = Math.max(0, this.stats.currentLife - remaining);
+    }
+
+    // Nhấp nháy đỏ báo hiệu nhận đòn
+    this.setTint(0xff3333);
+    this.scene.time.delayedCall(120, () => {
+      if (this.active) this.clearTint();
+    });
+
+    return true;
+  }
+
+  update(time: number, delta: number): void {
     const speed = this.stats.movementSpeed;
     let vx = 0;
     let vy = 0;
@@ -146,6 +180,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setFlipX(false);
     } else {
       this.anims.stop();
+    }
+
+    // PoE Mechanics: Hồi phục Energy Shield sau X giây không dính đòn
+    if (
+      this.stats.maxEnergyShield > 0 &&
+      this.stats.energyShield < this.stats.maxEnergyShield &&
+      time - this.lastHitTime > this.stats.esRechargeDelay * 1000
+    ) {
+      const rechargeRate = (this.stats.maxEnergyShield * 0.25 * delta) / 1000; // Hồi 25% ES mỗi giây
+      this.stats.energyShield = Math.min(this.stats.maxEnergyShield, this.stats.energyShield + rechargeRate);
     }
   }
 }
