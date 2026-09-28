@@ -1,8 +1,9 @@
-export type DamageType = 'physical' | 'fire' | 'cold' | 'lightning';
+export type DamageType = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos';
 
 export interface SkillContext {
   id: string;
   name: string;
+  level: number;
   damageType: DamageType;
   baseMinDamage: number;
   baseMaxDamage: number;
@@ -33,7 +34,8 @@ export interface ActiveGem {
   id: string;
   name: string;
   color: 'red' | 'green' | 'blue';
-  getInitialContext: () => SkillContext;
+  iconColor: number;
+  getInitialContext: (level?: number) => SkillContext;
 }
 
 export interface Socket {

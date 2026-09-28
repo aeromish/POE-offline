@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
-import { InventoryData, CurrencyType, EquipmentItem } from '../core/items/ItemTypes';
+import { InventoryData, CurrencyType } from '../core/items/ItemTypes';
 import { CraftingEngine } from '../core/crafting/CraftingEngine';
 import { Player } from './Player';
+import { SoundEffects } from '../core/audio/SoundEffects';
 
 export class CraftingUI {
   private scene: Phaser.Scene;
@@ -14,7 +15,8 @@ export class CraftingUI {
   private itemTitleText!: Phaser.GameObjects.Text;
   private socketsText!: Phaser.GameObjects.Text;
   private affixesText!: Phaser.GameObjects.Text;
-  private bagContainer!: Phaser.GameObjects.Container;
+  private tierBonusText!: Phaser.GameObjects.Text;
+  private bagElements: Phaser.GameObjects.GameObject[] = [];
   private currencyButtons: Map<CurrencyType, Phaser.GameObjects.Text> = new Map();
 
   constructor(scene: Phaser.Scene, inv: InventoryData, player: Player, onItemUpdated: () => void) {
@@ -22,7 +24,7 @@ export class CraftingUI {
     this.inventoryData = inv;
     this.player = player;
     this.onItemUpdated = onItemUpdated;
-    this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(300);
+    this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(450);
     this.createPanel();
     this.container.setVisible(false);
   }
@@ -43,35 +45,43 @@ export class CraftingUI {
     const cx = this.scene.scale.width / 2;
     const cy = this.scene.scale.height / 2;
 
-    const bg = this.scene.add.rectangle(cx, cy, 740, 520, 0x090d16, 1.0);
-    bg.setStrokeStyle(2, 0x30363d);
-    bg.setInteractive();
+    const bg = this.scene.add.rectangle(cx, cy, 780, 530, 0x090d16, 1.0)
+      .setStrokeStyle(2, 0x30363d)
+      .setScrollFactor(0)
+      .setInteractive();
     this.container.add(bg);
 
-    const header = this.scene.add.text(cx, cy - 235, 'HÀNH TRANG & CHẾ TẠO TRANG BỊ [I]', {
+    const header = this.scene.add.text(cx, cy - 240, 'HÀNH TRANG & RÈN TRANG BỊ (TIER FORGE) [I]', {
       fontFamily: 'monospace',
       fontSize: '18px',
       fontStyle: 'bold',
       color: '#ffd700',
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0);
     this.container.add(header);
 
-    // CỘT TRÁI: TRANG BỊ ĐANG MẶC
-    this.itemTitleText = this.scene.add.text(cx - 180, cy - 195, '', {
+    // CỘT TRÁI: ĐANG MẶC
+    this.itemTitleText = this.scene.add.text(cx - 200, cy - 200, '', {
       fontFamily: 'monospace',
       fontSize: '15px',
       fontStyle: 'bold',
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0);
     this.container.add(this.itemTitleText);
 
-    this.socketsText = this.scene.add.text(cx - 340, cy - 170, '', {
+    this.tierBonusText = this.scene.add.text(cx - 370, cy - 180, '', {
+      fontFamily: 'monospace',
+      fontSize: '11px',
+      color: '#fbbf24',
+    }).setScrollFactor(0);
+    this.container.add(this.tierBonusText);
+
+    this.socketsText = this.scene.add.text(cx - 370, cy - 155, '', {
       fontFamily: 'monospace',
       fontSize: '11px',
       lineSpacing: 3,
-    });
+    }).setScrollFactor(0);
     this.container.add(this.socketsText);
 
-    this.affixesText = this.scene.add.text(cx - 340, cy - 80, '', {
+    this.affixesText = this.scene.add.text(cx - 370, cy - 70, '', {
       fontFamily: 'monospace',
       fontSize: '11px',
       color: '#8888ff',
@@ -79,19 +89,31 @@ export class CraftingUI {
     });
     this.container.add(this.affixesText);
 
-    // CỘT PHẢI: TÚI ĐỒ (BAG)
-    const bagTitle = this.scene.add.text(cx + 170, cy - 195, '❖ TÚI ĐỒ (BẤM ĐỂ MẶC):', {
+    // CỘT PHẢI: TÚI ĐỒ & GHÉP ĐỒ
+    const bagTitle = this.scene.add.text(cx + 170, cy - 200, '❖ TÚI ĐỒ (BẤM MẶC HOẶC GHÉP TIER):', {
       fontFamily: 'monospace',
-      fontSize: '14px',
+      fontSize: '13px',
       fontStyle: 'bold',
       color: '#38bdf8',
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0);
     this.container.add(bagTitle);
 
-    this.bagContainer = this.scene.add.container(cx + 40, cy - 165);
-    this.container.add(this.bagContainer);
+    // NÚT GHÉP ĐỒ TĂNG TIER
+    const forgeBtn = this.scene.add.text(cx + 170, cy - 165, '🔨 HIẾN TẾ 2 MÓN TRONG TÚI ĐỂ NÂNG +1 TIER', {
+      fontFamily: 'monospace',
+      fontSize: '11px',
+      fontStyle: 'bold',
+      color: '#000000',
+      backgroundColor: '#f59e0b',
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
 
-    // HÀNG DƯỚI: NÚT CRAFTING CURRENCY
+    forgeBtn.on('pointerdown', () => this.forgeUpgradeTier());
+    forgeBtn.on('pointerover', () => forgeBtn.setBackgroundColor('#ffffff'));
+    forgeBtn.on('pointerout', () => forgeBtn.setBackgroundColor('#f59e0b'));
+    this.container.add(forgeBtn);
+
+    // HÀNG DƯỚI: CRAFTING CURRENCY
     const curList: { type: CurrencyType; name: string }[] = [
       { type: 'transmutation', name: 'Transmute' },
       { type: 'alteration', name: 'Alteration' },
@@ -101,7 +123,7 @@ export class CraftingUI {
       { type: 'scouring', name: 'Scouring' },
     ];
 
-    const startY = cy + 130;
+    const startY = cy + 135;
     curList.forEach((c, idx) => {
       const col = idx % 3;
       const row = Math.floor(idx / 3);
@@ -116,7 +138,7 @@ export class CraftingUI {
         padding: { x: 10, y: 7 },
         stroke: '#000000',
         strokeThickness: 2,
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
 
       btn.on('pointerdown', () => this.useCurrency(c.type));
       btn.on('pointerover', () => btn.setBackgroundColor('#388bfd'));
@@ -126,27 +148,47 @@ export class CraftingUI {
       this.container.add(btn);
     });
 
-    const closeBtn = this.scene.add.text(cx, cy + 230, '[ĐÓNG GIAO DIỆN (I)]', {
+    const closeBtn = this.scene.add.text(cx, cy + 235, '[ĐÓNG GIAO DIỆN (I)]', {
       fontFamily: 'monospace',
       fontSize: '13px',
       color: '#8b949e',
       backgroundColor: '#161b22',
       padding: { x: 12, y: 5 },
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5).setScrollFactor(0).setInteractive({ useHandCursor: true });
 
     closeBtn.on('pointerdown', () => this.toggle());
     this.container.add(closeBtn);
   }
 
-  // MẶC ĐỒ TỪ TÚI
+  // TÍNH NĂNG GHÉP ĐỒ HIẾN TẾ NÂNG TIER
+  private forgeUpgradeTier(): void {
+    if (this.inventoryData.bag.length < 2) {
+      alert('Cần ít nhất 2 trang bị trong túi đồ để làm nguyên liệu hiến tế nâng Tier!');
+      return;
+    }
+    if (this.inventoryData.equippedItem.tier >= 5) {
+      alert('Trang bị đang mặc đã đạt cấp tối đa (Tier 5)!');
+      return;
+    }
+
+    // Tiêu thụ 2 món đầu tiên trong túi
+    this.inventoryData.bag.splice(0, 2);
+    this.inventoryData.equippedItem.tier++;
+
+    SoundEffects.playPoETink();
+    this.onItemUpdated();
+    this.refresh();
+  }
+
   private equipFromBag(index: number): void {
     if (index >= this.inventoryData.bag.length) return;
     const itemToEquip = this.inventoryData.bag[index];
     const oldItem = this.inventoryData.equippedItem;
 
     this.inventoryData.equippedItem = itemToEquip;
-    this.inventoryData.bag[index] = oldItem; // Tráo món cũ vào lại túi
+    this.inventoryData.bag[index] = oldItem;
 
+    SoundEffects.playPoETink();
     this.onItemUpdated();
     this.refresh();
   }
@@ -157,6 +199,7 @@ export class CraftingUI {
 
     const success = CraftingEngine.applyCurrency(cur, this.inventoryData.equippedItem);
     if (success) {
+      SoundEffects.playHit();
       this.inventoryData.currencies[cur]--;
       this.onItemUpdated();
       this.refresh();
@@ -166,8 +209,11 @@ export class CraftingUI {
   public refresh(): void {
     const item = this.inventoryData.equippedItem;
     const rarityColor = item.rarity === 'Rare' ? '#ffd700' : item.rarity === 'Magic' ? '#4169e1' : '#ffffff';
-    this.itemTitleText.setText(`[ĐANG MẶC: ${item.rarity.toUpperCase()}] ${item.baseType}`);
+    this.itemTitleText.setText(`[TIER ${item.tier} - ${item.rarity.toUpperCase()}] ${item.baseType}`);
     this.itemTitleText.setColor(rarityColor);
+
+    const tierMult = 1 + (item.tier - 1) * 0.4;
+    this.tierBonusText.setText(`★ Hiệu Lực Tier ${item.tier}: Gia tăng ${Math.round((tierMult - 1) * 100)}% toàn bộ chỉ số món đồ`);
 
     let sockStr = '❖ LỖ NGỌC & LIÊN KẾT:\n';
     this.player.sockets.forEach((s, idx) => {
@@ -179,49 +225,59 @@ export class CraftingUI {
     let affStr = '--- PREFIXES ---\n';
     if (item.prefixes.length === 0) affStr += '(Trống)\n';
     item.prefixes.forEach((p) => {
-      affStr += `• ${p.name}: +${p.value} (${p.statType})\n`;
+      const scaledVal = Math.round(p.value * tierMult);
+      affStr += `• ${p.name}: +${scaledVal} (${p.statType})\n`;
     });
 
     affStr += '\n--- SUFFIXES ---\n';
     if (item.suffixes.length === 0) affStr += '(Trống)\n';
     item.suffixes.forEach((s) => {
-      affStr += `• ${s.name}: +${s.value} (${s.statType})\n`;
+      const scaledVal = Math.round(s.value * tierMult);
+      affStr += `• ${s.name}: +${scaledVal} (${s.statType})\n`;
     });
     this.affixesText.setText(affStr);
 
-    // VẼ CÁC MÓN TRONG TÚI ĐỒ (BAG)
-    this.bagContainer.removeAll(true);
+    this.bagElements.forEach((el) => el.destroy());
+    this.bagElements = [];
+
+    const cx = this.scene.scale.width / 2;
+    const cy = this.scene.scale.height / 2;
+
     if (this.inventoryData.bag.length === 0) {
-      const emptyText = this.scene.add.text(0, 30, '(Túi trống - Đánh quái để nhặt đồ)', {
+      const emptyText = this.scene.add.text(cx + 40, cy - 125, '(Túi trống - Đánh quái để nhặt trang bị)', {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#64748b',
-      });
-      this.bagContainer.add(emptyText);
+      }).setScrollFactor(0);
+      this.bagElements.push(emptyText);
+      this.container.add(emptyText);
     } else {
       this.inventoryData.bag.forEach((bagItem, idx) => {
-        const itemY = idx * 42;
+        const itemY = cy - 135 + idx * 44;
         const rColor = bagItem.rarity === 'Rare' ? '#ffd700' : bagItem.rarity === 'Magic' ? '#60a5fa' : '#ffffff';
 
-        const nameTxt = this.scene.add.text(0, itemY, `[${bagItem.rarity}] ${bagItem.baseType}`, {
+        const nameTxt = this.scene.add.text(cx + 10, itemY, `[T${bagItem.tier} ${bagItem.rarity}] ${bagItem.baseType}`, {
           fontFamily: 'monospace',
-          fontSize: '12px',
+          fontSize: '11px',
           fontStyle: 'bold',
           color: rColor,
-        });
+        }).setScrollFactor(0);
 
-        const equipBtn = this.scene.add.text(180, itemY - 2, 'MẶC ĐỒ', {
+        const equipBtn = this.scene.add.text(cx + 270, itemY, 'MẶC ĐỒ', {
           fontFamily: 'monospace',
           fontSize: '11px',
           fontStyle: 'bold',
           color: '#000000',
           backgroundColor: '#38bdf8',
-          padding: { x: 6, y: 3 },
-        }).setInteractive({ useHandCursor: true });
+          padding: { x: 8, y: 4 },
+        }).setScrollFactor(0).setInteractive({ useHandCursor: true });
 
         equipBtn.on('pointerdown', () => this.equipFromBag(idx));
+        equipBtn.on('pointerover', () => equipBtn.setBackgroundColor('#ffffff'));
+        equipBtn.on('pointerout', () => equipBtn.setBackgroundColor('#38bdf8'));
 
-        this.bagContainer.add([nameTxt, equipBtn]);
+        this.bagElements.push(nameTxt, equipBtn);
+        this.container.add([nameTxt, equipBtn]);
       });
     }
 

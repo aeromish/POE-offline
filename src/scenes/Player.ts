@@ -13,7 +13,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public sockets: Socket[] = [];
   public compiledSkills: SkillContext[] = [];
 
-  // Theo dõi thời gian hồi riêng cho từng kỹ năng (cho phép bắn đa kỹ năng)
   private skillCooldownTimers: Map<string, number> = new Map();
   public skillBonusLevels: Map<string, number> = new Map();
 
@@ -70,30 +69,30 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         { color: 'green', linkGroup: 1, gem: PierceSupport },
         { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
       ];
+      this.skillBonusLevels.set('fireball', 1);
     } else if (this.characterClass === 'Archer') {
       this.sockets = [
         { color: 'green', linkGroup: 1, gem: SplitArrowSkill },
         { color: 'green', linkGroup: 1, gem: PierceSupport },
         { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
       ];
+      this.skillBonusLevels.set('split_arrow', 1);
     } else {
       this.sockets = [
         { color: 'red', linkGroup: 1, gem: GroundSlamSkill },
         { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
         { color: 'green', linkGroup: 1, gem: PierceSupport },
       ];
+      this.skillBonusLevels.set('ground_slam', 1);
     }
   }
 
-  // THÊM HOẶC NÂNG CẤP KỸ NĂNG
   public addOrUpgradeSkill(skillId: string): void {
+    const curLvl = this.skillBonusLevels.get(skillId) || 0;
+    this.skillBonusLevels.set(skillId, curLvl + 1);
+
     const existing = this.sockets.find((s) => s.gem && s.gem.id === skillId);
-    if (existing) {
-      // Đã có -> Tăng level kỹ năng
-      const curLvl = this.skillBonusLevels.get(skillId) || 1;
-      this.skillBonusLevels.set(skillId, curLvl + 1);
-    } else {
-      // Chưa có -> Gắn vào một Socket mới
+    if (!existing) {
       const newGem = ALL_ACTIVE_SKILLS[skillId];
       if (newGem) {
         this.sockets.push({
@@ -101,7 +100,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
           linkGroup: this.sockets.length + 1,
           gem: newGem,
         });
-        this.skillBonusLevels.set(skillId, 1);
       }
     }
     this.compileSkills();
@@ -129,19 +127,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const levelBonusLife = (this.stats.level - 1) * 15;
     const levelBonusES = (this.stats.level - 1) * 10;
 
+    // Hệ số khuếch đại theo Tier trang bị: +40% mỗi Tier
+    const tierMultiplier = 1 + (item.tier - 1) * 0.4;
+
     this.stats.maxLife = base.maxLife + levelBonusLife + treeBonus.flatLife;
     this.stats.maxEnergyShield = base.maxEnergyShield + (base.maxEnergyShield > 0 ? levelBonusES : 0) + treeBonus.flatES;
     this.stats.armour = base.armour + treeBonus.flatArmour;
     this.stats.evasion = base.evasion + treeBonus.flatEvasion;
     this.stats.movementSpeed = base.movementSpeed + treeBonus.movementSpeed;
 
-    // Chỉ số từ trang bị mặc trên người
     const allAffixes = [...item.prefixes, ...item.suffixes];
     for (const aff of allAffixes) {
-      if (aff.statType === 'flat_life') this.stats.maxLife += aff.value;
-      if (aff.statType === 'flat_es') this.stats.maxEnergyShield += aff.value;
-      if (aff.statType === 'armour') this.stats.armour += aff.value;
-      if (aff.statType === 'movement_speed') this.stats.movementSpeed += aff.value;
+      const scaledVal = Math.round(aff.value * tierMultiplier);
+      if (aff.statType === 'flat_life') this.stats.maxLife += scaledVal;
+      if (aff.statType === 'flat_es') this.stats.maxEnergyShield += scaledVal;
+      if (aff.statType === 'armour') this.stats.armour += scaledVal;
+      if (aff.statType === 'movement_speed') this.stats.movementSpeed += scaledVal;
     }
 
     this.stats.currentLife = Math.min(this.stats.currentLife, this.stats.maxLife);
@@ -160,13 +161,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     let extraProj = 0;
     let extraPierce = 0;
 
+    const tierMult = equippedItem ? 1 + (equippedItem.tier - 1) * 0.4 : 1;
+
     if (equippedItem) {
       const allAff = [...equippedItem.prefixes, ...equippedItem.suffixes];
       for (const a of allAff) {
-        if (a.statType === 'added_damage') addedDmg += a.value;
-        if (a.statType === 'inc_damage') incDmg += a.value;
-        if (a.statType === 'attack_speed') atkSpeedPct += a.value;
-        if (a.statType === 'crit_chance') critChance += a.value;
+        const val = Math.round(a.value * tierMult);
+        if (a.statType === 'added_damage') addedDmg += val;
+        if (a.statType === 'inc_damage') incDmg += val;
+        if (a.statType === 'attack_speed') atkSpeedPct += val;
+        if (a.statType === 'crit_chance') critChance += val;
       }
     }
 
@@ -180,13 +184,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     for (const activeSock of activeSockets) {
       const activeGem = activeSock.gem as ActiveGem;
-      const ctx = activeGem.getInitialContext();
-
-      // Bonus từ Level kỹ năng: Mỗi cấp tăng 20% sát thương
-      const sLvl = this.skillBonusLevels.get(ctx.id) || 1;
-      if (sLvl > 1) {
-        ctx.increasedDamagePercent += (sLvl - 1) * 20;
-      }
+      const sLvl = this.skillBonusLevels.get(activeGem.id) || 1;
+      const ctx = activeGem.getInitialContext(sLvl);
 
       if (ctx.damageType === 'physical' && treeBonus) {
         incDmg += treeBonus.incPhysDamage;
@@ -216,7 +215,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  // BẮN TOÀN BỘ CÁC KỸ NĂNG ĐƯỢC TRANG BỊ THEO COOLDOWN ĐỘC LẬP
   public tryCastSkills(
     time: number,
     targetX: number,
@@ -244,6 +242,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         p.fire(this.x, this.y, baseAngle + offset, skill);
       }
     }
+  }
+
+  public getCooldownPercent(skillId: string, time: number): number {
+    const skill = this.compiledSkills.find((s) => s.id === skillId);
+    if (!skill) return 0;
+    const lastCast = this.skillCooldownTimers.get(skillId) || 0;
+    const cooldown = skill.baseCooldown / skill.attackSpeedMultiplier;
+    const elapsed = time - lastCast;
+    if (elapsed >= cooldown) return 0;
+    return 1 - elapsed / cooldown;
   }
 
   public takePhysicalDamage(rawDamage: number, time: number): boolean {

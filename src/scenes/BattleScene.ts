@@ -41,13 +41,14 @@ export class BattleScene extends Phaser.Scene {
     },
     equippedItem: {
       id: 'eq_starter',
-      name: 'Vũ khí Sắt Tập Sự',
+      name: 'Vũ khí Sắt Rèn',
       baseType: 'Sword',
+      tier: 1,
       rarity: 'Normal',
       prefixes: [],
       suffixes: [],
     },
-    bag: [], // Bắt đầu với túi rỗng
+    bag: [],
   };
 
   private waveText!: Phaser.GameObjects.Text;
@@ -57,6 +58,11 @@ export class BattleScene extends Phaser.Scene {
   private lifeBarGfx!: Phaser.GameObjects.Graphics;
   private esBarGfx!: Phaser.GameObjects.Graphics;
   private expBarGfx!: Phaser.GameObjects.Graphics;
+
+  // HUD THANH KỸ NĂNG CHÍNH (SKILL BAR)
+  private skillBarContainer!: Phaser.GameObjects.Container;
+  private skillSlotWidgets: { bg: Phaser.GameObjects.Rectangle; icon: Phaser.GameObjects.Text; lvl: Phaser.GameObjects.Text; cdGfx: Phaser.GameObjects.Graphics; id: string }[] = [];
+
   private isGameOver: boolean = false;
   private bestWave: number = 1;
   private isHoveringInteractiveUI: boolean = false;
@@ -135,7 +141,7 @@ export class BattleScene extends Phaser.Scene {
       }
     });
 
-    // Va chạm: Nhặt đồ (Cho phép nhặt vào Túi đồ Bag)
+    // Va chạm: Nhặt đồ
     this.physics.add.overlap(this.player, this.lootPool, (_playerObj, lootObj) => {
       const loot = lootObj as LootDrop;
       if (!loot.active) return;
@@ -149,10 +155,12 @@ export class BattleScene extends Phaser.Scene {
           this.inventoryData.bag.push(d.equipmentItem);
           this.showPickupNotice(loot.x, loot.y, `TÚI: ${d.name}`);
         } else {
-          this.showPickupNotice(loot.x, loot.y, `TÚI ĐỒ ĐÃ ĐẦY!`);
+          this.showPickupNotice(loot.x, loot.y, `TÚI ĐÃ ĐẦY!`);
         }
-      } else if (d.category === 'gem') {
-        this.showPickupNotice(loot.x, loot.y, `NHẶT: ${d.name}`);
+      } else if (d.category === 'gem' && d.gemId) {
+        this.player.addOrUpgradeSkill(d.gemId);
+        this.syncPlayerStats();
+        this.showPickupNotice(loot.x, loot.y, `HỌC NGỌC: ${d.name}`);
       }
     });
 
@@ -182,6 +190,7 @@ export class BattleScene extends Phaser.Scene {
     });
 
     this.createHUD();
+    this.createSkillBarHUD(); // HUD THANH KỸ NĂNG
     this.createTopRightActionMenu();
 
     this.craftingUI = new CraftingUI(this, this.inventoryData, this.player, () => this.syncPlayerStats());
@@ -196,7 +205,6 @@ export class BattleScene extends Phaser.Scene {
       () => this.passiveTreeUI.toggle()
     );
 
-    // Phím tắt
     this.input.keyboard?.on('keydown-C', () => this.characterUI.toggle());
     this.input.keyboard?.on('keydown-I', () => this.craftingUI.toggle());
     this.input.keyboard?.on('keydown-P', () => this.passiveTreeUI.toggle());
@@ -221,16 +229,91 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  // TẠO 3 LỰA CHỌN KHI LÊN CẤP
+  // TẠO HUD THANH KỸ NĂNG Ở DƯỚI ĐÁY MÀN HÌNH
+  private createSkillBarHUD(): void {
+    this.skillBarContainer = this.add.container(0, 0).setScrollFactor(0).setDepth(200);
+    this.rebuildSkillBarWidgets();
+  }
+
+  private rebuildSkillBarWidgets(): void {
+    this.skillBarContainer.removeAll(true);
+    this.skillSlotWidgets = [];
+
+    const skills = this.player.compiledSkills;
+    const startX = this.scale.width / 2 - (skills.length * 60) / 2 + 30;
+    const slotY = this.scale.height - 50;
+
+    skills.forEach((skill, idx) => {
+      const slotX = startX + idx * 60;
+
+      const bg = this.add.rectangle(slotX, slotY, 50, 50, 0x111827, 0.95)
+        .setStrokeStyle(2, 0x38bdf8)
+        .setScrollFactor(0);
+
+      const icon = this.add.text(slotX, slotY - 6, skill.name.slice(0, 2).toUpperCase(), {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+      }).setOrigin(0.5).setScrollFactor(0);
+
+      const lvl = this.add.text(slotX, slotY + 14, `Lv.${skill.level}`, {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: '#ffd700',
+      }).setOrigin(0.5).setScrollFactor(0);
+
+      const cdGfx = this.add.graphics().setScrollFactor(0);
+
+      this.skillBarContainer.add([bg, icon, lvl, cdGfx]);
+      this.skillSlotWidgets.push({ bg, icon, lvl, cdGfx, id: skill.id });
+    });
+  }
+
+  // BẢNG 3 LỰA CHỌN KHI LÊN CẤP
   private triggerLevelUpChoiceModal(): void {
     SoundEffects.playWaveClear();
     this.passiveTreeManager.unspentPoints++;
 
     const pool: LevelUpChoice[] = [
       {
+        id: 'arc',
+        title: 'Arc (Tia Sét Xích)',
+        description: 'Tia sét chuỗi giật nhanh, nảy bật qua 2 mục tiêu.',
+        type: 'new_skill',
+        skillId: 'arc',
+        apply: () => {
+          this.player.addOrUpgradeSkill('arc');
+          this.syncPlayerStats();
+        },
+      },
+      {
+        id: 'molten_strike',
+        title: 'Molten Strike (Hỏa Nham)',
+        description: 'Bắn ra chùm dung nham rực lửa gây sát thương nổ lan.',
+        type: 'new_skill',
+        skillId: 'molten_strike',
+        apply: () => {
+          this.player.addOrUpgradeSkill('molten_strike');
+          this.syncPlayerStats();
+        },
+      },
+      {
+        id: 'toxic_spore',
+        title: 'Toxic Spore (Bào Tử Độc)',
+        description: 'Bắn các cụm độc tố Chaos nổ tung trên diện rộng.',
+        type: 'new_skill',
+        skillId: 'toxic_spore',
+        apply: () => {
+          this.player.addOrUpgradeSkill('toxic_spore');
+          this.syncPlayerStats();
+        },
+      },
+      {
         id: 'frostbolt',
-        title: 'Băng Cầu (Frostbolt)',
-        description: 'Bắn cầu băng xuyên thấu 100% mục tiêu, gây sát thương Băng cao.',
+        title: 'Frostbolt (Băng Cầu)',
+        description: 'Bắn cầu băng xuyên thấu 100% mục tiêu, làm chậm quái.',
         type: 'new_skill',
         skillId: 'frostbolt',
         apply: () => {
@@ -240,8 +323,8 @@ export class BattleScene extends Phaser.Scene {
       },
       {
         id: 'spark',
-        title: 'Tia Sét (Spark)',
-        description: 'Bắn 4 tia sét giật nhanh tán xạ rộng ra xung quanh.',
+        title: 'Spark (Tia Sét Tán Xạ)',
+        description: 'Bắn 4 tia sét giật nhanh tán xạ rộng xung quanh.',
         type: 'new_skill',
         skillId: 'spark',
         apply: () => {
@@ -251,8 +334,8 @@ export class BattleScene extends Phaser.Scene {
       },
       {
         id: 'blade_vortex',
-        title: 'Bão Kiếm (Blade Vortex)',
-        description: 'Tạo các lưỡi kiếm xoay vòng chém liên tục quái vật áp sát.',
+        title: 'Blade Vortex (Bão Kiếm)',
+        description: 'Tạo các lưỡi kiếm xoay vòng chém liên tục quái áp sát.',
         type: 'new_skill',
         skillId: 'blade_vortex',
         apply: () => {
@@ -261,35 +344,35 @@ export class BattleScene extends Phaser.Scene {
         },
       },
       {
-        id: 'fireball_up',
-        title: 'Cường Hóa Hỏa Cầu',
-        description: '+20% Sát thương và tăng tốc độ bay cho Fireball.',
+        id: 'upgrade_main',
+        title: 'Cường Hóa Kỹ Năng Hiện Có',
+        description: '+1 Level cho toàn bộ kỹ năng đang trang bị (+30% Sát thương).',
         type: 'upgrade_skill',
         apply: () => {
-          this.player.addOrUpgradeSkill('fireball');
+          this.player.compiledSkills.forEach((s) => this.player.addOrUpgradeSkill(s.id));
           this.syncPlayerStats();
         },
       },
       {
         id: 'vitality_boost',
-        title: 'Thể Lực Bất Bại',
-        description: '+40 Máu Tối Đa và +15 Tốc Độ Di Chuyển.',
+        title: 'Thể Lực Bất Hoại',
+        description: '+50 Máu Tối Đa và +20 Tốc Độ Di Chuyển.',
         type: 'stat_boost',
         apply: () => {
-          this.player.stats.maxLife += 40;
+          this.player.stats.maxLife += 50;
           this.player.stats.currentLife = this.player.stats.maxLife;
-          this.player.stats.movementSpeed += 15;
+          this.player.stats.movementSpeed += 20;
           this.syncPlayerStats();
         },
       },
     ];
 
-    // Lấy ngẫu nhiên 3 thẻ khác nhau
     const shuffled = [...pool].sort(() => 0.5 - Math.random());
     const selected3 = shuffled.slice(0, 3);
 
     this.levelUpUI.show(selected3, () => {
       this.syncPlayerStats();
+      this.rebuildSkillBarWidgets();
     });
   }
 
@@ -310,6 +393,7 @@ export class BattleScene extends Phaser.Scene {
       const nextIdx = (classes.indexOf(this.player.characterClass) + 1) % classes.length;
       this.player.setClass(classes[nextIdx]);
       this.syncPlayerStats();
+      this.rebuildSkillBarWidgets();
     });
 
     const charBtn = this.add.text(rx, 55, '👤 CHỈ SỐ (C)', {
@@ -323,7 +407,7 @@ export class BattleScene extends Phaser.Scene {
 
     charBtn.on('pointerdown', () => this.characterUI.toggle());
 
-    const craftBtn = this.add.text(rx, 90, '⚒️ HÒM ĐỒ & TÚI (I)', {
+    const craftBtn = this.add.text(rx, 90, '⚒️ HÒM & RÈN TIER (I)', {
       fontFamily: 'monospace',
       fontSize: '13px',
       fontStyle: 'bold',
@@ -396,7 +480,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createProceduralTextures(): void {
-    // 1. Fireball
     if (!this.textures.exists('proj_fireball')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0xef4444, 1);
@@ -407,7 +490,6 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 2. Split Arrow
     if (!this.textures.exists('proj_arrow')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0x22c55e, 1);
@@ -417,7 +499,6 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 3. Ground Slam
     if (!this.textures.exists('proj_slam')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0xd97706, 0.9);
@@ -428,7 +509,6 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 4. Frostbolt (Xanh băng)
     if (!this.textures.exists('proj_frostbolt')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0x06b6d4, 0.9);
@@ -439,7 +519,6 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 5. Spark (Tia sét vàng xanh)
     if (!this.textures.exists('proj_spark')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0xfacc15, 1);
@@ -450,7 +529,6 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 6. Blade Vortex (Lưỡi kiếm xoay)
     if (!this.textures.exists('proj_blade')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0x94a3b8, 1);
@@ -461,7 +539,36 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // Quái vật sắc nét
+    if (!this.textures.exists('proj_arc')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0x38bdf8, 1);
+      g.fillRect(0, 4, 16, 4);
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(4, 2, 8, 8);
+      g.generateTexture('proj_arc', 16, 12);
+      g.destroy();
+    }
+
+    if (!this.textures.exists('proj_molten')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0xf97316, 1);
+      g.fillCircle(10, 10, 10);
+      g.fillStyle(0xfef08a, 1);
+      g.fillCircle(10, 10, 5);
+      g.generateTexture('proj_molten', 20, 20);
+      g.destroy();
+    }
+
+    if (!this.textures.exists('proj_toxic')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0x10b981, 1);
+      g.fillCircle(8, 8, 8);
+      g.fillStyle(0xd8b4fe, 1);
+      g.fillCircle(8, 8, 4);
+      g.generateTexture('proj_toxic', 16, 16);
+      g.destroy();
+    }
+
     const list = [
       { key: 'monster_normal', body: 0x991b1b, eye: 0xfef08a, border: 0xef4444 },
       { key: 'monster_magic',  body: 0x1e40af, eye: 0x67e8f9, border: 0x60a5fa },
@@ -529,7 +636,7 @@ export class BattleScene extends Phaser.Scene {
     this.expBarGfx = this.add.graphics().setScrollFactor(0);
   }
 
-  private renderHUD(): void {
+  private renderHUD(time: number): void {
     this.lifeBarGfx.clear();
     this.esBarGfx.clear();
     this.expBarGfx.clear();
@@ -539,7 +646,7 @@ export class BattleScene extends Phaser.Scene {
     const x = 20;
     const y = this.scale.height - 45;
 
-    this.classLevelText.setText(`[${this.player.characterClass.toUpperCase()}] CẤP ĐỘ: ${this.player.stats.level}`);
+    this.classLevelText.setText(`[${this.player.characterClass.toUpperCase()}] CẤP: ${this.player.stats.level} (TIÊN PHONG)`);
 
     this.lifeBarGfx.fillStyle(0x000000, 0.7);
     this.lifeBarGfx.fillRect(x, y, barW, barH);
@@ -559,6 +666,16 @@ export class BattleScene extends Phaser.Scene {
     this.expBarGfx.fillRect(0, this.scale.height - 8, expW, 8);
     this.expBarGfx.fillStyle(0x38bdf8, 1);
     this.expBarGfx.fillRect(0, this.scale.height - 8, expW * expPct, 8);
+
+    // Cập nhật hiệu ứng Hồi Chiêu trên thanh Kỹ Năng
+    this.skillSlotWidgets.forEach((w) => {
+      w.cdGfx.clear();
+      const cdPct = this.player.getCooldownPercent(w.id, time);
+      if (cdPct > 0) {
+        w.cdGfx.fillStyle(0x000000, 0.65);
+        w.cdGfx.fillRect(w.bg.x - 25, w.bg.y - 25 + 50 * (1 - cdPct), 50, 50 * cdPct);
+      }
+    });
   }
 
   private spawnMonsterWave(): void {
@@ -675,7 +792,7 @@ export class BattleScene extends Phaser.Scene {
     }
 
     this.player.update(time, delta);
-    this.renderHUD();
+    this.renderHUD(time);
 
     this.monsterPool.children.each((child) => {
       const mon = child as Monster;

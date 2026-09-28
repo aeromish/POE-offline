@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PassiveTreeManager } from '../core/passive/PassiveTreeManager';
 import { PASSIVE_TREE_NODES } from '../core/passive/PassiveTreeData';
+import { SoundEffects } from '../core/audio/SoundEffects';
 
 export class PassiveTreeUI {
   private scene: Phaser.Scene;
@@ -18,7 +19,7 @@ export class PassiveTreeUI {
     this.scene = scene;
     this.treeManager = manager;
     this.onTreeChanged = onTreeChanged;
-    this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(400); // Lớp trên cùng
+    this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(450);
     this.createPanel();
     this.container.setVisible(false);
   }
@@ -39,10 +40,10 @@ export class PassiveTreeUI {
     const cx = this.scene.scale.width / 2;
     const cy = this.scene.scale.height / 2;
 
-    // NỀN ĐEN 100% OPAQUE KHÔNG XUYÊN THẤU VẬT PHẨM DƯỚI SÀN
-    const bg = this.scene.add.rectangle(cx, cy, 760, 520, 0x070a10, 1.0);
-    bg.setStrokeStyle(2, 0x30363d);
-    bg.setInteractive();
+    const bg = this.scene.add.rectangle(cx, cy, 760, 520, 0x070a10, 1.0)
+      .setStrokeStyle(2, 0x30363d)
+      .setScrollFactor(0)
+      .setInteractive();
     this.container.add(bg);
 
     const title = this.scene.add.text(cx, cy - 230, 'CÂY KỸ NĂNG NỘI TẠI (PASSIVE TREE) [P]', {
@@ -50,7 +51,7 @@ export class PassiveTreeUI {
       fontSize: '18px',
       fontStyle: 'bold',
       color: '#ffd700',
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0);
     this.container.add(title);
 
     this.pointsText = this.scene.add.text(cx, cy - 200, '', {
@@ -58,10 +59,10 @@ export class PassiveTreeUI {
       fontSize: '15px',
       fontStyle: 'bold',
       color: '#00ffff',
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0);
     this.container.add(this.pointsText);
 
-    this.linesGraphics = this.scene.add.graphics();
+    this.linesGraphics = this.scene.add.graphics().setScrollFactor(0);
     this.container.add(this.linesGraphics);
 
     this.tooltipText = this.scene.add.text(cx, cy + 235, 'Di chuột vào node để xem mô tả. Nhấp chuột để nâng cấp.', {
@@ -70,7 +71,7 @@ export class PassiveTreeUI {
       color: '#c9d1d9',
       backgroundColor: '#161b22',
       padding: { x: 10, y: 5 },
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0);
     this.container.add(this.tooltipText);
 
     for (const [id, node] of Object.entries(PASSIVE_TREE_NODES)) {
@@ -78,7 +79,7 @@ export class PassiveTreeUI {
       const ny = cy + node.gridY;
       const radius = node.nodeType === 'keystone' ? 17 : node.nodeType === 'notable' ? 13 : 10;
 
-      const circle = this.scene.add.circle(nx, ny, radius, 0x333333).setInteractive({ useHandCursor: true });
+      const circle = this.scene.add.circle(nx, ny, radius, 0x333333).setScrollFactor(0);
       circle.setStrokeStyle(2, 0x666666);
 
       const label = this.scene.add.text(nx, ny, node.name.slice(0, 1), {
@@ -86,16 +87,22 @@ export class PassiveTreeUI {
         fontSize: '11px',
         fontStyle: 'bold',
         color: '#ffffff',
-      }).setOrigin(0.5);
+      }).setOrigin(0.5).setScrollFactor(0);
 
-      circle.on('pointerdown', () => {
+      // TẠO ZONE HIT AREA RỘNG 38x38 CÓ SCROLLFACTOR(0) ĐỂ BẮT CLICK TUYỆT ĐỐI CHUẨN XÁC
+      const hitZone = this.scene.add.zone(nx, ny, 38, 38)
+        .setScrollFactor(0)
+        .setInteractive({ useHandCursor: true });
+
+      hitZone.on('pointerdown', () => {
         if (this.treeManager.allocate(id)) {
+          SoundEffects.playPoETink();
           this.onTreeChanged();
           this.refresh();
         }
       });
 
-      circle.on('pointerover', () => {
+      hitZone.on('pointerover', () => {
         const status = this.treeManager.allocatedNodeIds.has(id)
           ? '[ĐÃ HỌC]'
           : this.treeManager.canAllocate(id)
@@ -104,13 +111,12 @@ export class PassiveTreeUI {
         this.tooltipText.setText(`${node.name} ${status} - ${node.description}`);
       });
 
-      circle.on('pointerout', () => {
+      hitZone.on('pointerout', () => {
         this.tooltipText.setText('Di chuột vào node để xem mô tả. Nhấp chuột để nâng cấp.');
       });
 
       this.nodeSprites.set(id, { circle, text: label });
-      this.container.add(circle);
-      this.container.add(label);
+      this.container.add([circle, label, hitZone]);
     }
   }
 

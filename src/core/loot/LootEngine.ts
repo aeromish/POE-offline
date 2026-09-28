@@ -27,19 +27,19 @@ export class LootEngine {
     for (let i = 0; i < numDrops; i++) {
       const typeRoll = Math.random();
 
-      // 60% rơi Currency
-      if (typeRoll < 0.6) {
+      // 55% rơi Tiền tệ Crafting
+      if (typeRoll < 0.55) {
         const cRoll = Math.random() * 100;
         let cur: CurrencyType = 'transmutation';
         let name = 'Orb of Transmutation';
 
-        if (cRoll < 4 && (rarity === 'Rare' || rarity === 'Boss')) {
+        if (cRoll < 5 && (rarity === 'Rare' || rarity === 'Boss')) {
           cur = 'exalted';
           name = 'Exalted Orb';
-        } else if (cRoll < 20 && (rarity === 'Magic' || rarity === 'Rare' || rarity === 'Boss')) {
+        } else if (cRoll < 22 && (rarity === 'Magic' || rarity === 'Rare' || rarity === 'Boss')) {
           cur = 'chaos';
           name = 'Chaos Orb';
-        } else if (cRoll < 40) {
+        } else if (cRoll < 42) {
           cur = 'regal';
           name = 'Regal Orb';
         } else if (cRoll < 65) {
@@ -52,20 +52,22 @@ export class LootEngine {
 
         drops.push({ category: 'currency', currencyType: cur, name });
       }
-      // 25% rơi Trang Bị (Equipment)
+      // 30% rơi Trang bị có Tier
       else if (typeRoll < 0.85) {
         const bases: ('Sword' | 'Bow' | 'Wand' | 'Plate')[] = ['Sword', 'Bow', 'Wand', 'Plate'];
         const base = bases[Math.floor(Math.random() * bases.length)];
+        const itemTier = rarity === 'Boss' ? 3 : rarity === 'Rare' ? 2 : 1;
+
         const item: EquipmentItem = {
           id: `eq_${Date.now()}_${Math.random()}`,
           name: `${base}`,
           baseType: base,
+          tier: itemTier,
           rarity: 'Normal',
           prefixes: [],
           suffixes: [],
         };
 
-        // Quái xịn rơi đồ Magic hoặc Rare luôn
         if (rarity === 'Rare' || rarity === 'Boss') {
           CraftingEngine.applyTransmutation(item);
           CraftingEngine.applyRegal(item);
@@ -76,20 +78,14 @@ export class LootEngine {
         drops.push({
           category: 'equipment',
           equipmentItem: item,
-          name: `[${item.rarity}] ${item.baseType}`,
+          name: `[T${item.tier} ${item.rarity}] ${item.baseType}`,
         });
       }
-      // 15% rơi Ngọc (Gems)
+      // 15% rơi Ngọc kỹ năng
       else {
-        const gems = [
-          { id: 'fireball', name: 'Ngọc Hỏa Cầu (Fireball)' },
-          { id: 'split_arrow', name: 'Ngọc Tên Rẽ (Split Arrow)' },
-          { id: 'gmp', name: 'Ngọc GMP (Tăng Đạn)' },
-          { id: 'pierce', name: 'Ngọc Pierce (Xuyên Thấu)' },
-          { id: 'added_fire', name: 'Ngọc Added Fire' },
-        ];
-        const g = gems[Math.floor(Math.random() * gems.length)];
-        drops.push({ category: 'gem', gemId: g.id, name: g.name });
+        const gemKeys = ['fireball', 'split_arrow', 'ground_slam', 'frostbolt', 'spark', 'blade_vortex', 'arc', 'molten_strike', 'toxic_spore'];
+        const gid = gemKeys[Math.floor(Math.random() * gemKeys.length)];
+        drops.push({ category: 'gem', gemId: gid, name: `Ngọc ${gid.toUpperCase()}` });
       }
     }
 

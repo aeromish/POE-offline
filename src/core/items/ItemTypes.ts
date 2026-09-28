@@ -37,6 +37,7 @@ export interface EquipmentItem {
   id: string;
   name: string;
   baseType: 'Sword' | 'Bow' | 'Wand' | 'Plate';
+  tier: number; // Tier 1 -> Tier 5
   rarity: ItemRarity;
   prefixes: AffixInstance[];
   suffixes: AffixInstance[];
@@ -45,5 +46,5 @@ export interface EquipmentItem {
 export interface InventoryData {
   currencies: Record<CurrencyType, number>;
   equippedItem: EquipmentItem;
-  bag: EquipmentItem[]; // Túi đồ chứa các trang bị nhặt được
+  bag: EquipmentItem[];
 }
