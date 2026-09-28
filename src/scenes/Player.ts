@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CharacterClass, CLASS_BASE_STATS, PoEStats, getExpNeeded } from '../core/stats/CharacterStats';
 import { Socket, SkillContext, ActiveGem, SupportGem } from '../core/gems/GemTypes';
-import { FireballSkill, SplitArrowSkill, GroundSlamSkill } from '../core/gems/ActiveGems';
+import { FireballSkill, SplitArrowSkill, GroundSlamSkill, ALL_ACTIVE_SKILLS } from '../core/gems/ActiveGems';
 import { GreaterMultipleProjectiles, AddedFireDamageSupport, PierceSupport } from '../core/gems/SupportGems';
 import { EquipmentItem } from '../core/items/ItemTypes';
 import { PassiveTreeBonus } from '../core/passive/PassiveTreeTypes';
@@ -13,12 +13,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public sockets: Socket[] = [];
   public compiledSkills: SkillContext[] = [];
 
+  // Theo dõi thời gian hồi riêng cho từng kỹ năng (cho phép bắn đa kỹ năng)
+  private skillCooldownTimers: Map<string, number> = new Map();
+  public skillBonusLevels: Map<string, number> = new Map();
+
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keyW!: Phaser.Input.Keyboard.Key;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyS!: Phaser.Input.Keyboard.Key;
   private keyD!: Phaser.Input.Keyboard.Key;
-  private lastCastTime: number = 0;
   private lastHitTime: number = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, characterClass: CharacterClass) {
@@ -82,7 +85,28 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  // Tăng EXP và kiểm tra lên cấp
+  // THÊM HOẶC NÂNG CẤP KỸ NĂNG
+  public addOrUpgradeSkill(skillId: string): void {
+    const existing = this.sockets.find((s) => s.gem && s.gem.id === skillId);
+    if (existing) {
+      // Đã có -> Tăng level kỹ năng
+      const curLvl = this.skillBonusLevels.get(skillId) || 1;
+      this.skillBonusLevels.set(skillId, curLvl + 1);
+    } else {
+      // Chưa có -> Gắn vào một Socket mới
+      const newGem = ALL_ACTIVE_SKILLS[skillId];
+      if (newGem) {
+        this.sockets.push({
+          color: newGem.color,
+          linkGroup: this.sockets.length + 1,
+          gem: newGem,
+        });
+        this.skillBonusLevels.set(skillId, 1);
+      }
+    }
+    this.compileSkills();
+  }
+
   public gainExp(amount: number): boolean {
     this.stats.currentExp += amount;
     if (this.stats.currentExp >= this.stats.maxExp) {
@@ -95,7 +119,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.stats.maxEnergyShield += 10;
         this.stats.energyShield = this.stats.maxEnergyShield;
       }
-      return true; // Lên cấp thành công
+      return true;
     }
     return false;
   }
@@ -111,6 +135,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stats.evasion = base.evasion + treeBonus.flatEvasion;
     this.stats.movementSpeed = base.movementSpeed + treeBonus.movementSpeed;
 
+    // Chỉ số từ trang bị mặc trên người
     const allAffixes = [...item.prefixes, ...item.suffixes];
     for (const aff of allAffixes) {
       if (aff.statType === 'flat_life') this.stats.maxLife += aff.value;
@@ -157,6 +182,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       const activeGem = activeSock.gem as ActiveGem;
       const ctx = activeGem.getInitialContext();
 
+      // Bonus từ Level kỹ năng: Mỗi cấp tăng 20% sát thương
+      const sLvl = this.skillBonusLevels.get(ctx.id) || 1;
+      if (sLvl > 1) {
+        ctx.increasedDamagePercent += (sLvl - 1) * 20;
+      }
+
       if (ctx.damageType === 'physical' && treeBonus) {
         incDmg += treeBonus.incPhysDamage;
       } else if (ctx.damageType === 'fire' && treeBonus) {
@@ -185,6 +216,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  // BẮN TOÀN BỘ CÁC KỸ NĂNG ĐƯỢC TRANG BỊ THEO COOLDOWN ĐỘC LẬP
   public tryCastSkills(
     time: number,
     targetX: number,
@@ -192,23 +224,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     projectilePool: Phaser.Physics.Arcade.Group
   ): void {
     if (this.compiledSkills.length === 0) return;
-    const skill = this.compiledSkills[0];
 
-    const cooldown = skill.baseCooldown / skill.attackSpeedMultiplier;
-    if (time - this.lastCastTime < cooldown) return;
+    for (const skill of this.compiledSkills) {
+      const lastCast = this.skillCooldownTimers.get(skill.id) || 0;
+      const cooldown = skill.baseCooldown / skill.attackSpeedMultiplier;
+      if (time - lastCast < cooldown) continue;
 
-    this.lastCastTime = time;
+      this.skillCooldownTimers.set(skill.id, time);
 
-    const baseAngle = Phaser.Math.Angle.Between(this.x, this.y, targetX, targetY);
-    const count = skill.projectileCount;
-    const spreadAngle = 0.16;
+      const baseAngle = Phaser.Math.Angle.Between(this.x, this.y, targetX, targetY);
+      const count = skill.projectileCount;
+      const spreadAngle = 0.16;
 
-    for (let i = 0; i < count; i++) {
-      const p = projectilePool.get(this.x, this.y) as Projectile;
-      if (!p) continue;
+      for (let i = 0; i < count; i++) {
+        const p = projectilePool.get(this.x, this.y) as Projectile;
+        if (!p) continue;
 
-      const offset = (i - (count - 1) / 2) * spreadAngle;
-      p.fire(this.x, this.y, baseAngle + offset, skill);
+        const offset = (i - (count - 1) / 2) * spreadAngle;
+        p.fire(this.x, this.y, baseAngle + offset, skill);
+      }
     }
   }
 

@@ -6,6 +6,7 @@ import { LootDrop } from './LootDrop';
 import { CraftingUI } from './CraftingUI';
 import { PassiveTreeUI } from './PassiveTreeUI';
 import { CharacterUI } from './CharacterUI';
+import { LevelUpUI, LevelUpChoice } from './LevelUpUI';
 import { IntermissionUI } from './IntermissionUI';
 import { WaveManager } from '../core/monsters/WaveManager';
 import { DamageEngine } from '../core/combat/DamageEngine';
@@ -26,6 +27,7 @@ export class BattleScene extends Phaser.Scene {
   private craftingUI!: CraftingUI;
   private passiveTreeUI!: PassiveTreeUI;
   private characterUI!: CharacterUI;
+  private levelUpUI!: LevelUpUI;
   private intermissionUI!: IntermissionUI;
 
   private inventoryData: InventoryData = {
@@ -38,13 +40,14 @@ export class BattleScene extends Phaser.Scene {
       scouring: 2,
     },
     equippedItem: {
-      id: 'eq_1',
-      name: 'Vũ khí Sắt',
+      id: 'eq_starter',
+      name: 'Vũ khí Sắt Tập Sự',
       baseType: 'Sword',
       rarity: 'Normal',
       prefixes: [],
       suffixes: [],
     },
+    bag: [], // Bắt đầu với túi rỗng
   };
 
   private waveText!: Phaser.GameObjects.Text;
@@ -116,10 +119,9 @@ export class BattleScene extends Phaser.Scene {
       CombatUI.showDamageText(this, monster.x, monster.y, hit);
 
       if (isDead) {
-        // Tăng EXP
         const leveledUp = this.player.gainExp(monster.monsterStats.expReward);
         if (leveledUp) {
-          this.triggerLevelUpNotice();
+          this.triggerLevelUpChoiceModal();
         }
 
         this.dropLoot(monster.x, monster.y, monster.monsterStats.rarity);
@@ -133,7 +135,7 @@ export class BattleScene extends Phaser.Scene {
       }
     });
 
-    // Va chạm: Người chơi -> Nhặt Loot
+    // Va chạm: Nhặt đồ (Cho phép nhặt vào Túi đồ Bag)
     this.physics.add.overlap(this.player, this.lootPool, (_playerObj, lootObj) => {
       const loot = lootObj as LootDrop;
       if (!loot.active) return;
@@ -143,10 +145,12 @@ export class BattleScene extends Phaser.Scene {
         this.inventoryData.currencies[d.currencyType] = (this.inventoryData.currencies[d.currencyType] || 0) + 1;
         this.showPickupNotice(loot.x, loot.y, d.currencyType.toUpperCase());
       } else if (d.category === 'equipment' && d.equipmentItem) {
-        // Tự động trang bị nếu đồ mới xịn hơn
-        this.inventoryData.equippedItem = d.equipmentItem;
-        this.syncPlayerStats();
-        this.showPickupNotice(loot.x, loot.y, `ĐỔI: ${d.name}`);
+        if (this.inventoryData.bag.length < 6) {
+          this.inventoryData.bag.push(d.equipmentItem);
+          this.showPickupNotice(loot.x, loot.y, `TÚI: ${d.name}`);
+        } else {
+          this.showPickupNotice(loot.x, loot.y, `TÚI ĐỒ ĐÃ ĐẦY!`);
+        }
       } else if (d.category === 'gem') {
         this.showPickupNotice(loot.x, loot.y, `NHẶT: ${d.name}`);
       }
@@ -154,7 +158,7 @@ export class BattleScene extends Phaser.Scene {
 
     // Va chạm: Quái -> Người chơi
     this.physics.add.overlap(this.player, this.monsterPool, (_playerObj, monObj) => {
-      if (this.isGameOver || this.intermissionUI.getIsShowing()) return;
+      if (this.isGameOver || this.intermissionUI.getIsShowing() || this.levelUpUI.getIsShowing()) return;
       const monster = monObj as Monster;
       if (!monster.active) return;
 
@@ -183,6 +187,7 @@ export class BattleScene extends Phaser.Scene {
     this.craftingUI = new CraftingUI(this, this.inventoryData, this.player, () => this.syncPlayerStats());
     this.passiveTreeUI = new PassiveTreeUI(this, this.passiveTreeManager, () => this.syncPlayerStats());
     this.characterUI = new CharacterUI(this, this.player);
+    this.levelUpUI = new LevelUpUI(this);
 
     this.intermissionUI = new IntermissionUI(
       this,
@@ -191,7 +196,7 @@ export class BattleScene extends Phaser.Scene {
       () => this.passiveTreeUI.toggle()
     );
 
-    // Phím tắt bàn phím
+    // Phím tắt
     this.input.keyboard?.on('keydown-C', () => this.characterUI.toggle());
     this.input.keyboard?.on('keydown-I', () => this.craftingUI.toggle());
     this.input.keyboard?.on('keydown-P', () => this.passiveTreeUI.toggle());
@@ -216,32 +221,81 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  private triggerLevelUpNotice(): void {
-    this.passiveTreeManager.unspentPoints++;
+  // TẠO 3 LỰA CHỌN KHI LÊN CẤP
+  private triggerLevelUpChoiceModal(): void {
     SoundEffects.playWaveClear();
+    this.passiveTreeManager.unspentPoints++;
 
-    const lvlText = this.add.text(this.player.x, this.player.y - 45, '★ LEVEL UP! (+1 THIÊN PHÚ) ★', {
-      fontFamily: 'monospace',
-      fontSize: '16px',
-      fontStyle: 'bold',
-      color: '#ffd700',
-      stroke: '#000000',
-      strokeThickness: 3,
-    }).setOrigin(0.5);
+    const pool: LevelUpChoice[] = [
+      {
+        id: 'frostbolt',
+        title: 'Băng Cầu (Frostbolt)',
+        description: 'Bắn cầu băng xuyên thấu 100% mục tiêu, gây sát thương Băng cao.',
+        type: 'new_skill',
+        skillId: 'frostbolt',
+        apply: () => {
+          this.player.addOrUpgradeSkill('frostbolt');
+          this.syncPlayerStats();
+        },
+      },
+      {
+        id: 'spark',
+        title: 'Tia Sét (Spark)',
+        description: 'Bắn 4 tia sét giật nhanh tán xạ rộng ra xung quanh.',
+        type: 'new_skill',
+        skillId: 'spark',
+        apply: () => {
+          this.player.addOrUpgradeSkill('spark');
+          this.syncPlayerStats();
+        },
+      },
+      {
+        id: 'blade_vortex',
+        title: 'Bão Kiếm (Blade Vortex)',
+        description: 'Tạo các lưỡi kiếm xoay vòng chém liên tục quái vật áp sát.',
+        type: 'new_skill',
+        skillId: 'blade_vortex',
+        apply: () => {
+          this.player.addOrUpgradeSkill('blade_vortex');
+          this.syncPlayerStats();
+        },
+      },
+      {
+        id: 'fireball_up',
+        title: 'Cường Hóa Hỏa Cầu',
+        description: '+20% Sát thương và tăng tốc độ bay cho Fireball.',
+        type: 'upgrade_skill',
+        apply: () => {
+          this.player.addOrUpgradeSkill('fireball');
+          this.syncPlayerStats();
+        },
+      },
+      {
+        id: 'vitality_boost',
+        title: 'Thể Lực Bất Bại',
+        description: '+40 Máu Tối Đa và +15 Tốc Độ Di Chuyển.',
+        type: 'stat_boost',
+        apply: () => {
+          this.player.stats.maxLife += 40;
+          this.player.stats.currentLife = this.player.stats.maxLife;
+          this.player.stats.movementSpeed += 15;
+          this.syncPlayerStats();
+        },
+      },
+    ];
 
-    this.tweens.add({
-      targets: lvlText,
-      y: this.player.y - 85,
-      alpha: 0,
-      duration: 1500,
-      onComplete: () => lvlText.destroy(),
+    // Lấy ngẫu nhiên 3 thẻ khác nhau
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    const selected3 = shuffled.slice(0, 3);
+
+    this.levelUpUI.show(selected3, () => {
+      this.syncPlayerStats();
     });
   }
 
   private createTopRightActionMenu(): void {
     const rx = this.scale.width - 20;
 
-    // Nút đổi class nhanh
     const classBtn = this.add.text(rx, 20, '🎭 ĐỔI CLASS', {
       fontFamily: 'monospace',
       fontSize: '13px',
@@ -258,7 +312,6 @@ export class BattleScene extends Phaser.Scene {
       this.syncPlayerStats();
     });
 
-    // Nút Bảng Chỉ Số [C]
     const charBtn = this.add.text(rx, 55, '👤 CHỈ SỐ (C)', {
       fontFamily: 'monospace',
       fontSize: '13px',
@@ -270,8 +323,7 @@ export class BattleScene extends Phaser.Scene {
 
     charBtn.on('pointerdown', () => this.characterUI.toggle());
 
-    // Nút Hòm Đồ [I]
-    const craftBtn = this.add.text(rx, 90, '⚒️ HÒM ĐỒ (I)', {
+    const craftBtn = this.add.text(rx, 90, '⚒️ HÒM ĐỒ & TÚI (I)', {
       fontFamily: 'monospace',
       fontSize: '13px',
       fontStyle: 'bold',
@@ -282,7 +334,6 @@ export class BattleScene extends Phaser.Scene {
 
     craftBtn.on('pointerdown', () => this.craftingUI.toggle());
 
-    // Nút Cây Thiên Phú [P]
     const treeBtn = this.add.text(rx, 125, '🌲 THIÊN PHÚ (P)', {
       fontFamily: 'monospace',
       fontSize: '13px',
@@ -345,7 +396,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createProceduralTextures(): void {
-    // 1. Cầu lửa (Fireball)
+    // 1. Fireball
     if (!this.textures.exists('proj_fireball')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0xef4444, 1);
@@ -356,7 +407,7 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 2. Mũi tên (Split Arrow)
+    // 2. Split Arrow
     if (!this.textures.exists('proj_arrow')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0x22c55e, 1);
@@ -366,7 +417,7 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 3. Sóng xung kích (Ground Slam)
+    // 3. Ground Slam
     if (!this.textures.exists('proj_slam')) {
       const g = this.make.graphics({ x: 0, y: 0 });
       g.fillStyle(0xd97706, 0.9);
@@ -377,7 +428,40 @@ export class BattleScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 4. Quái vật sắc nét
+    // 4. Frostbolt (Xanh băng)
+    if (!this.textures.exists('proj_frostbolt')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0x06b6d4, 0.9);
+      g.fillCircle(9, 9, 9);
+      g.fillStyle(0xe0f2fe, 1);
+      g.fillCircle(9, 9, 5);
+      g.generateTexture('proj_frostbolt', 18, 18);
+      g.destroy();
+    }
+
+    // 5. Spark (Tia sét vàng xanh)
+    if (!this.textures.exists('proj_spark')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0xfacc15, 1);
+      g.fillCircle(6, 6, 5);
+      g.fillStyle(0x67e8f9, 1);
+      g.fillCircle(6, 6, 3);
+      g.generateTexture('proj_spark', 12, 12);
+      g.destroy();
+    }
+
+    // 6. Blade Vortex (Lưỡi kiếm xoay)
+    if (!this.textures.exists('proj_blade')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0x94a3b8, 1);
+      g.fillRect(2, 6, 16, 4);
+      g.fillStyle(0xffffff, 1);
+      g.fillTriangle(20, 8, 16, 4, 16, 12);
+      g.generateTexture('proj_blade', 20, 16);
+      g.destroy();
+    }
+
+    // Quái vật sắc nét
     const list = [
       { key: 'monster_normal', body: 0x991b1b, eye: 0xfef08a, border: 0xef4444 },
       { key: 'monster_magic',  body: 0x1e40af, eye: 0x67e8f9, border: 0x60a5fa },
@@ -455,24 +539,20 @@ export class BattleScene extends Phaser.Scene {
     const x = 20;
     const y = this.scale.height - 45;
 
-    // Cập nhật text class và level
     this.classLevelText.setText(`[${this.player.characterClass.toUpperCase()}] CẤP ĐỘ: ${this.player.stats.level}`);
 
-    // Thanh Máu
     this.lifeBarGfx.fillStyle(0x000000, 0.7);
     this.lifeBarGfx.fillRect(x, y, barW, barH);
     const lifePct = Math.max(0, this.player.stats.currentLife / this.player.stats.maxLife);
     this.lifeBarGfx.fillStyle(0xdc143c, 1);
     this.lifeBarGfx.fillRect(x, y, barW * lifePct, barH);
 
-    // Thanh Khiên Năng Lượng (ES)
     if (this.player.stats.maxEnergyShield > 0) {
       const esPct = Math.max(0, this.player.stats.energyShield / this.player.stats.maxEnergyShield);
       this.esBarGfx.fillStyle(0x1e90ff, 0.9);
       this.esBarGfx.fillRect(x, y - 8, barW * esPct, 6);
     }
 
-    // THANH KINH NGHIỆM (EXP) Ở ĐÁY MÀN HÌNH
     const expW = this.scale.width;
     const expPct = Math.max(0, this.player.stats.currentExp / this.player.stats.maxExp);
     this.expBarGfx.fillStyle(0x1e293b, 0.9);
@@ -488,7 +568,8 @@ export class BattleScene extends Phaser.Scene {
       this.intermissionUI.getIsShowing() ||
       this.craftingUI.getIsOpen() ||
       this.passiveTreeUI.getIsOpen() ||
-      this.characterUI.getIsOpen()
+      this.characterUI.getIsOpen() ||
+      this.levelUpUI.getIsShowing()
     ) {
       return;
     }
@@ -514,7 +595,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private tickWaveTimer(): void {
-    if (this.isGameOver || this.intermissionUI.getIsShowing()) return;
+    if (this.isGameOver || this.intermissionUI.getIsShowing() || this.levelUpUI.getIsShowing()) return;
 
     this.waveManager.timeRemaining--;
     this.timerText.setText(`THỜI GIAN: ${this.waveManager.timeRemaining}s`);
@@ -584,7 +665,8 @@ export class BattleScene extends Phaser.Scene {
       this.intermissionUI.getIsShowing() || 
       this.craftingUI.getIsOpen() || 
       this.passiveTreeUI.getIsOpen() ||
-      this.characterUI.getIsOpen();
+      this.characterUI.getIsOpen() ||
+      this.levelUpUI.getIsShowing();
 
     if (isUIBlocking) {
       const body = this.player.body as Phaser.Physics.Arcade.Body;

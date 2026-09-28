@@ -45,4 +45,5 @@ export interface EquipmentItem {
 export interface InventoryData {
   currencies: Record<CurrencyType, number>;
   equippedItem: EquipmentItem;
+  bag: EquipmentItem[]; // Túi đồ chứa các trang bị nhặt được
 }

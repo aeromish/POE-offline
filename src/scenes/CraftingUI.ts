@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { InventoryData, CurrencyType } from '../core/items/ItemTypes';
+import { InventoryData, CurrencyType, EquipmentItem } from '../core/items/ItemTypes';
 import { CraftingEngine } from '../core/crafting/CraftingEngine';
 import { Player } from './Player';
 
@@ -14,6 +14,7 @@ export class CraftingUI {
   private itemTitleText!: Phaser.GameObjects.Text;
   private socketsText!: Phaser.GameObjects.Text;
   private affixesText!: Phaser.GameObjects.Text;
+  private bagContainer!: Phaser.GameObjects.Container;
   private currencyButtons: Map<CurrencyType, Phaser.GameObjects.Text> = new Map();
 
   constructor(scene: Phaser.Scene, inv: InventoryData, player: Player, onItemUpdated: () => void) {
@@ -21,7 +22,7 @@ export class CraftingUI {
     this.inventoryData = inv;
     this.player = player;
     this.onItemUpdated = onItemUpdated;
-    this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(100);
+    this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(300);
     this.createPanel();
     this.container.setVisible(false);
   }
@@ -42,12 +43,12 @@ export class CraftingUI {
     const cx = this.scene.scale.width / 2;
     const cy = this.scene.scale.height / 2;
 
-    const bg = this.scene.add.rectangle(cx, cy, 620, 500, 0x090d16, 0.96);
+    const bg = this.scene.add.rectangle(cx, cy, 740, 520, 0x090d16, 1.0);
     bg.setStrokeStyle(2, 0x30363d);
-    bg.setInteractive(); // Chặn click xuyên xuống sàn đấu
+    bg.setInteractive();
     this.container.add(bg);
 
-    const header = this.scene.add.text(cx, cy - 225, 'HÒM ĐỒ & CHẾ TẠO TRANG BỊ [I]', {
+    const header = this.scene.add.text(cx, cy - 235, 'HÀNH TRANG & CHẾ TẠO TRANG BỊ [I]', {
       fontFamily: 'monospace',
       fontSize: '18px',
       fontStyle: 'bold',
@@ -55,30 +56,42 @@ export class CraftingUI {
     }).setOrigin(0.5);
     this.container.add(header);
 
-    this.itemTitleText = this.scene.add.text(cx, cy - 185, '', {
+    // CỘT TRÁI: TRANG BỊ ĐANG MẶC
+    this.itemTitleText = this.scene.add.text(cx - 180, cy - 195, '', {
       fontFamily: 'monospace',
-      fontSize: '16px',
+      fontSize: '15px',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     this.container.add(this.itemTitleText);
 
-    // Khu vực hiển thị Sockets & Gems
-    this.socketsText = this.scene.add.text(cx - 280, cy - 155, '', {
+    this.socketsText = this.scene.add.text(cx - 340, cy - 170, '', {
       fontFamily: 'monospace',
-      fontSize: '12px',
-      lineSpacing: 4,
+      fontSize: '11px',
+      lineSpacing: 3,
     });
     this.container.add(this.socketsText);
 
-    // Khu vực hiển thị Affixes
-    this.affixesText = this.scene.add.text(cx - 280, cy - 70, '', {
+    this.affixesText = this.scene.add.text(cx - 340, cy - 80, '', {
       fontFamily: 'monospace',
-      fontSize: '12px',
+      fontSize: '11px',
       color: '#8888ff',
-      lineSpacing: 4,
+      lineSpacing: 3,
     });
     this.container.add(this.affixesText);
 
+    // CỘT PHẢI: TÚI ĐỒ (BAG)
+    const bagTitle = this.scene.add.text(cx + 170, cy - 195, '❖ TÚI ĐỒ (BẤM ĐỂ MẶC):', {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#38bdf8',
+    }).setOrigin(0.5);
+    this.container.add(bagTitle);
+
+    this.bagContainer = this.scene.add.container(cx + 40, cy - 165);
+    this.container.add(this.bagContainer);
+
+    // HÀNG DƯỚI: NÚT CRAFTING CURRENCY
     const curList: { type: CurrencyType; name: string }[] = [
       { type: 'transmutation', name: 'Transmute' },
       { type: 'alteration', name: 'Alteration' },
@@ -88,19 +101,19 @@ export class CraftingUI {
       { type: 'scouring', name: 'Scouring' },
     ];
 
-    const startY = cy + 120;
+    const startY = cy + 130;
     curList.forEach((c, idx) => {
       const col = idx % 3;
       const row = Math.floor(idx / 3);
       const bx = cx - 180 + col * 180;
-      const by = startY + row * 52;
+      const by = startY + row * 48;
 
       const btn = this.scene.add.text(bx, by, '', {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#ffffff',
         backgroundColor: '#21262d',
-        padding: { x: 10, y: 8 },
+        padding: { x: 10, y: 7 },
         stroke: '#000000',
         strokeThickness: 2,
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
@@ -113,7 +126,7 @@ export class CraftingUI {
       this.container.add(btn);
     });
 
-    const closeBtn = this.scene.add.text(cx, cy + 225, '[ĐÓNG GIAO DIỆN (I)]', {
+    const closeBtn = this.scene.add.text(cx, cy + 230, '[ĐÓNG GIAO DIỆN (I)]', {
       fontFamily: 'monospace',
       fontSize: '13px',
       color: '#8b949e',
@@ -123,6 +136,19 @@ export class CraftingUI {
 
     closeBtn.on('pointerdown', () => this.toggle());
     this.container.add(closeBtn);
+  }
+
+  // MẶC ĐỒ TỪ TÚI
+  private equipFromBag(index: number): void {
+    if (index >= this.inventoryData.bag.length) return;
+    const itemToEquip = this.inventoryData.bag[index];
+    const oldItem = this.inventoryData.equippedItem;
+
+    this.inventoryData.equippedItem = itemToEquip;
+    this.inventoryData.bag[index] = oldItem; // Tráo món cũ vào lại túi
+
+    this.onItemUpdated();
+    this.refresh();
   }
 
   private useCurrency(cur: CurrencyType): void {
@@ -140,15 +166,13 @@ export class CraftingUI {
   public refresh(): void {
     const item = this.inventoryData.equippedItem;
     const rarityColor = item.rarity === 'Rare' ? '#ffd700' : item.rarity === 'Magic' ? '#4169e1' : '#ffffff';
-    this.itemTitleText.setText(`[${item.rarity.toUpperCase()}] ${item.baseType}`);
+    this.itemTitleText.setText(`[ĐANG MẶC: ${item.rarity.toUpperCase()}] ${item.baseType}`);
     this.itemTitleText.setColor(rarityColor);
 
-    // Hiển thị Lỗ Ngọc & Dây nối (Sockets & Links)
-    let sockStr = '❖ LỖ NGỌC & LIÊN KẾT (SOCKETS & LINKS):\n';
+    let sockStr = '❖ LỖ NGỌC & LIÊN KẾT:\n';
     this.player.sockets.forEach((s, idx) => {
-      const colorHex = s.color === 'red' ? '#ff5555' : s.color === 'green' ? '#55ff55' : '#5599ff';
       const gemName = s.gem ? s.gem.name : '(Trống)';
-      sockStr += `  • Socket ${idx + 1} [Nhóm ${s.linkGroup} - ${s.color.toUpperCase()}]: ${gemName}\n`;
+      sockStr += `  • Ô ${idx + 1} [Nhóm ${s.linkGroup} - ${s.color.toUpperCase()}]: ${gemName}\n`;
     });
     this.socketsText.setText(sockStr);
 
@@ -161,9 +185,45 @@ export class CraftingUI {
     affStr += '\n--- SUFFIXES ---\n';
     if (item.suffixes.length === 0) affStr += '(Trống)\n';
     item.suffixes.forEach((s) => {
-      affStr += `• ${s.name}: +${p_to_s(s.statType, s.value)})\n`;
+      affStr += `• ${s.name}: +${s.value} (${s.statType})\n`;
     });
     this.affixesText.setText(affStr);
+
+    // VẼ CÁC MÓN TRONG TÚI ĐỒ (BAG)
+    this.bagContainer.removeAll(true);
+    if (this.inventoryData.bag.length === 0) {
+      const emptyText = this.scene.add.text(0, 30, '(Túi trống - Đánh quái để nhặt đồ)', {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: '#64748b',
+      });
+      this.bagContainer.add(emptyText);
+    } else {
+      this.inventoryData.bag.forEach((bagItem, idx) => {
+        const itemY = idx * 42;
+        const rColor = bagItem.rarity === 'Rare' ? '#ffd700' : bagItem.rarity === 'Magic' ? '#60a5fa' : '#ffffff';
+
+        const nameTxt = this.scene.add.text(0, itemY, `[${bagItem.rarity}] ${bagItem.baseType}`, {
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          fontStyle: 'bold',
+          color: rColor,
+        });
+
+        const equipBtn = this.scene.add.text(180, itemY - 2, 'MẶC ĐỒ', {
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          fontStyle: 'bold',
+          color: '#000000',
+          backgroundColor: '#38bdf8',
+          padding: { x: 6, y: 3 },
+        }).setInteractive({ useHandCursor: true });
+
+        equipBtn.on('pointerdown', () => this.equipFromBag(idx));
+
+        this.bagContainer.add([nameTxt, equipBtn]);
+      });
+    }
 
     this.currencyButtons.forEach((btn, type) => {
       const count = this.inventoryData.currencies[type] || 0;
@@ -171,8 +231,4 @@ export class CraftingUI {
       btn.setAlpha(count > 0 ? 1 : 0.4);
     });
   }
-}
-
-function p_to_s(stat: string, val: number): string {
-  return `${val} ${stat}`;
 }
