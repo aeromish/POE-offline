@@ -1,7 +1,6 @@
 import { PassiveNode } from './PassiveTreeTypes';
 
 export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
-  // Gốc xuất phát
   root: {
     id: 'root',
     name: 'Khởi Điểm Lưu Đày',
@@ -9,12 +8,12 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'start',
     branch: 'neutral',
     gridX: 0,
-    gridY: 0,
+    gridY: -10,
     connections: ['str_1', 'dex_1', 'int_1'],
     modifiers: [],
   },
 
-  // === NHÁNH ĐỎ: CHIẾN BINH / SỨC MẠNH ===
+  // === NHÁNH ĐỎ: SỨC MẠNH ===
   str_1: {
     id: 'str_1',
     name: 'Thân Thể Bất Khuất',
@@ -22,7 +21,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'small',
     branch: 'strength',
     gridX: -70,
-    gridY: -50,
+    gridY: -60,
     connections: ['root', 'str_2'],
     modifiers: [{ type: 'flat_life', value: 30 }],
   },
@@ -33,7 +32,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'small',
     branch: 'strength',
     gridX: -140,
-    gridY: -80,
+    gridY: -100,
     connections: ['str_1', 'str_3'],
     modifiers: [{ type: 'flat_armour', value: 40 }],
   },
@@ -44,7 +43,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'notable',
     branch: 'strength',
     gridX: -210,
-    gridY: -110,
+    gridY: -130,
     connections: ['str_2', 'str_keystone'],
     modifiers: [{ type: 'inc_phys_damage', value: 25 }],
   },
@@ -55,7 +54,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'keystone',
     branch: 'strength',
     gridX: -280,
-    gridY: -140,
+    gridY: -150,
     connections: ['str_3'],
     modifiers: [
       { type: 'flat_life', value: 70 },
@@ -63,7 +62,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     ],
   },
 
-  // === NHÁNH XANH LÁ: XẠ THỦ / KHÉO LÉO ===
+  // === NHÁNH XANH LÁ: KHÉO LÉO (Đã thu gọn để không bị chạm đáy) ===
   dex_1: {
     id: 'dex_1',
     name: 'Thần Tốc Hành Quân',
@@ -71,18 +70,18 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'small',
     branch: 'dexterity',
     gridX: 0,
-    gridY: 80,
+    gridY: 45,
     connections: ['root', 'dex_2'],
     modifiers: [{ type: 'movement_speed', value: 20 }],
   },
   dex_2: {
     id: 'dex_2',
     name: 'Vũ Điệu Cung Vũ',
-    description: '+20% Tốc Độ Bắn/Thi Triển Kỹ Năng',
+    description: '+20% Tốc Độ Bắn Kỹ Năng',
     nodeType: 'small',
     branch: 'dexterity',
     gridX: 0,
-    gridY: 150,
+    gridY: 95,
     connections: ['dex_1', 'dex_3'],
     modifiers: [{ type: 'attack_speed_pct', value: 20 }],
   },
@@ -93,7 +92,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'notable',
     branch: 'dexterity',
     gridX: 0,
-    gridY: 220,
+    gridY: 145,
     connections: ['dex_2', 'dex_keystone'],
     modifiers: [{ type: 'flat_evasion', value: 25 }],
   },
@@ -104,7 +103,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'keystone',
     branch: 'dexterity',
     gridX: 0,
-    gridY: 290,
+    gridY: 195,
     connections: ['dex_3'],
     modifiers: [
       { type: 'extra_projectile', value: 1 },
@@ -112,7 +111,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     ],
   },
 
-  // === NHÁNH XANH LAM: THUẬT SĨ / TRÍ TUỆ ===
+  // === NHÁNH XANH LAM: TRÍ TUỆ ===
   int_1: {
     id: 'int_1',
     name: 'Màn Chắn Tâm Linh',
@@ -120,7 +119,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'small',
     branch: 'intelligence',
     gridX: 70,
-    gridY: -50,
+    gridY: -60,
     connections: ['root', 'int_2'],
     modifiers: [{ type: 'flat_es', value: 35 }],
   },
@@ -131,7 +130,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'small',
     branch: 'intelligence',
     gridX: 140,
-    gridY: -80,
+    gridY: -100,
     connections: ['int_1', 'int_3'],
     modifiers: [{ type: 'inc_fire_damage', value: 25 }],
   },
@@ -142,7 +141,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'notable',
     branch: 'intelligence',
     gridX: 210,
-    gridY: -110,
+    gridY: -130,
     connections: ['int_2', 'int_keystone'],
     modifiers: [{ type: 'crit_chance', value: 8 }],
   },
@@ -153,7 +152,7 @@ export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
     nodeType: 'keystone',
     branch: 'intelligence',
     gridX: 280,
-    gridY: -140,
+    gridY: -150,
     connections: ['int_3'],
     modifiers: [
       { type: 'flat_es', value: 60 },

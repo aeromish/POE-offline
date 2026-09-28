@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
-import { CharacterClass, CLASS_BASE_STATS, PoEStats } from '../core/stats/CharacterStats';
+import { CharacterClass, CLASS_BASE_STATS, PoEStats, getExpNeeded } from '../core/stats/CharacterStats';
 import { Socket, SkillContext, ActiveGem, SupportGem } from '../core/gems/GemTypes';
-import { FireballSkill, SplitArrowSkill } from '../core/gems/ActiveGems';
+import { FireballSkill, SplitArrowSkill, GroundSlamSkill } from '../core/gems/ActiveGems';
 import { GreaterMultipleProjectiles, AddedFireDamageSupport, PierceSupport } from '../core/gems/SupportGems';
 import { EquipmentItem } from '../core/items/ItemTypes';
 import { PassiveTreeBonus } from '../core/passive/PassiveTreeTypes';
@@ -13,7 +13,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public sockets: Socket[] = [];
   public compiledSkills: SkillContext[] = [];
 
-  private cursors: Phaser.Types.Input.Keyboard.CursorKeys;
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keyW!: Phaser.Input.Keyboard.Key;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyS!: Phaser.Input.Keyboard.Key;
@@ -44,15 +44,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.keyA = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
       this.keyS = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
       this.keyD = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-    } else {
-      throw new Error('Keyboard plugin không khả dụng.');
     }
 
-    this.setupDefaultGems();
+    this.setupClassSkillAndGems();
     this.compileSkills();
   }
 
-  private setupDefaultGems(): void {
+  public setClass(newClass: CharacterClass): void {
+    this.characterClass = newClass;
+    const base = CLASS_BASE_STATS[newClass];
+    this.stats = { ...base, level: this.stats.level, currentExp: this.stats.currentExp, maxExp: this.stats.maxExp };
+    this.setTexture(`player_${newClass.toLowerCase()}`);
+    this.setupClassSkillAndGems();
+    this.compileSkills();
+  }
+
+  public setupClassSkillAndGems(): void {
     if (this.characterClass === 'Mage') {
       this.sockets = [
         { color: 'blue', linkGroup: 1, gem: FireballSkill },
@@ -60,21 +67,46 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         { color: 'green', linkGroup: 1, gem: PierceSupport },
         { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
       ];
-    } else {
+    } else if (this.characterClass === 'Archer') {
       this.sockets = [
         { color: 'green', linkGroup: 1, gem: SplitArrowSkill },
         { color: 'green', linkGroup: 1, gem: PierceSupport },
         { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
       ];
+    } else {
+      this.sockets = [
+        { color: 'red', linkGroup: 1, gem: GroundSlamSkill },
+        { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
+        { color: 'green', linkGroup: 1, gem: PierceSupport },
+      ];
     }
   }
 
-  // Tái tính toán toàn bộ chỉ số từ Base + Trang bị + Cây Nội Tại
+  // Tăng EXP và kiểm tra lên cấp
+  public gainExp(amount: number): boolean {
+    this.stats.currentExp += amount;
+    if (this.stats.currentExp >= this.stats.maxExp) {
+      this.stats.currentExp -= this.stats.maxExp;
+      this.stats.level++;
+      this.stats.maxExp = getExpNeeded(this.stats.level);
+      this.stats.maxLife += 15;
+      this.stats.currentLife = this.stats.maxLife;
+      if (this.stats.maxEnergyShield > 0) {
+        this.stats.maxEnergyShield += 10;
+        this.stats.energyShield = this.stats.maxEnergyShield;
+      }
+      return true; // Lên cấp thành công
+    }
+    return false;
+  }
+
   public recalculateTotalStats(item: EquipmentItem, treeBonus: PassiveTreeBonus): void {
     const base = CLASS_BASE_STATS[this.characterClass];
+    const levelBonusLife = (this.stats.level - 1) * 15;
+    const levelBonusES = (this.stats.level - 1) * 10;
 
-    this.stats.maxLife = base.maxLife + treeBonus.flatLife;
-    this.stats.maxEnergyShield = base.maxEnergyShield + treeBonus.flatES;
+    this.stats.maxLife = base.maxLife + levelBonusLife + treeBonus.flatLife;
+    this.stats.maxEnergyShield = base.maxEnergyShield + (base.maxEnergyShield > 0 ? levelBonusES : 0) + treeBonus.flatES;
     this.stats.armour = base.armour + treeBonus.flatArmour;
     this.stats.evasion = base.evasion + treeBonus.flatEvasion;
     this.stats.movementSpeed = base.movementSpeed + treeBonus.movementSpeed;
@@ -125,7 +157,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       const activeGem = activeSock.gem as ActiveGem;
       const ctx = activeGem.getInitialContext();
 
-      // Cộng thêm bonus từ Tree tùy theo loại sát thương
       if (ctx.damageType === 'physical' && treeBonus) {
         incDmg += treeBonus.incPhysDamage;
       } else if (ctx.damageType === 'fire' && treeBonus) {
@@ -170,7 +201,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     const baseAngle = Phaser.Math.Angle.Between(this.x, this.y, targetX, targetY);
     const count = skill.projectileCount;
-    const spreadAngle = 0.15;
+    const spreadAngle = 0.16;
 
     for (let i = 0; i < count; i++) {
       const p = projectilePool.get(this.x, this.y) as Projectile;

@@ -5,6 +5,7 @@ import { Monster } from './Monster';
 import { LootDrop } from './LootDrop';
 import { CraftingUI } from './CraftingUI';
 import { PassiveTreeUI } from './PassiveTreeUI';
+import { CharacterUI } from './CharacterUI';
 import { IntermissionUI } from './IntermissionUI';
 import { WaveManager } from '../core/monsters/WaveManager';
 import { DamageEngine } from '../core/combat/DamageEngine';
@@ -24,6 +25,7 @@ export class BattleScene extends Phaser.Scene {
 
   private craftingUI!: CraftingUI;
   private passiveTreeUI!: PassiveTreeUI;
+  private characterUI!: CharacterUI;
   private intermissionUI!: IntermissionUI;
 
   private inventoryData: InventoryData = {
@@ -48,9 +50,10 @@ export class BattleScene extends Phaser.Scene {
   private waveText!: Phaser.GameObjects.Text;
   private timerText!: Phaser.GameObjects.Text;
   private bestWaveText!: Phaser.GameObjects.Text;
+  private classLevelText!: Phaser.GameObjects.Text;
   private lifeBarGfx!: Phaser.GameObjects.Graphics;
   private esBarGfx!: Phaser.GameObjects.Graphics;
-  private muteBtn!: Phaser.GameObjects.Text;
+  private expBarGfx!: Phaser.GameObjects.Graphics;
   private isGameOver: boolean = false;
   private bestWave: number = 1;
   private isHoveringInteractiveUI: boolean = false;
@@ -71,7 +74,7 @@ export class BattleScene extends Phaser.Scene {
 
     this.createProceduralTextures();
 
-    // Map nền
+    // Map sàn
     this.add.grid(mapWidth / 2, mapHeight / 2, mapWidth, mapHeight, 64, 64, 0x161b22, 1, 0x21262d, 1);
 
     this.player = new Player(this, mapWidth / 2, mapHeight / 2, 'Mage');
@@ -99,7 +102,7 @@ export class BattleScene extends Phaser.Scene {
       runChildUpdate: false,
     });
 
-    // Va chạm: Đạn -> Quái (ĐÃ LOẠI BỎ RUNG MÀN HÌNH SCREEN SHAKE)
+    // Va chạm: Đạn -> Quái
     this.physics.add.overlap(this.projectilePool, this.monsterPool, (projObj, monObj) => {
       const proj = projObj as Projectile;
       const monster = monObj as Monster;
@@ -113,6 +116,12 @@ export class BattleScene extends Phaser.Scene {
       CombatUI.showDamageText(this, monster.x, monster.y, hit);
 
       if (isDead) {
+        // Tăng EXP
+        const leveledUp = this.player.gainExp(monster.monsterStats.expReward);
+        if (leveledUp) {
+          this.triggerLevelUpNotice();
+        }
+
         this.dropLoot(monster.x, monster.y, monster.monsterStats.rarity);
         monster.kill();
       }
@@ -129,12 +138,21 @@ export class BattleScene extends Phaser.Scene {
       const loot = lootObj as LootDrop;
       if (!loot.active) return;
 
-      const curType = loot.collect();
-      this.inventoryData.currencies[curType] = (this.inventoryData.currencies[curType] || 0) + 1;
-      this.showPickupNotice(loot.x, loot.y, curType);
+      const d = loot.collect();
+      if (d.category === 'currency' && d.currencyType) {
+        this.inventoryData.currencies[d.currencyType] = (this.inventoryData.currencies[d.currencyType] || 0) + 1;
+        this.showPickupNotice(loot.x, loot.y, d.currencyType.toUpperCase());
+      } else if (d.category === 'equipment' && d.equipmentItem) {
+        // Tự động trang bị nếu đồ mới xịn hơn
+        this.inventoryData.equippedItem = d.equipmentItem;
+        this.syncPlayerStats();
+        this.showPickupNotice(loot.x, loot.y, `ĐỔI: ${d.name}`);
+      } else if (d.category === 'gem') {
+        this.showPickupNotice(loot.x, loot.y, `NHẶT: ${d.name}`);
+      }
     });
 
-    // Va chạm: Quái -> Người chơi (ĐÃ LOẠI BỎ RUNG MÀN HÌNH SCREEN SHAKE)
+    // Va chạm: Quái -> Người chơi
     this.physics.add.overlap(this.player, this.monsterPool, (_playerObj, monObj) => {
       if (this.isGameOver || this.intermissionUI.getIsShowing()) return;
       const monster = monObj as Monster;
@@ -160,10 +178,11 @@ export class BattleScene extends Phaser.Scene {
     });
 
     this.createHUD();
-    this.createTopRightActionMenu(); // Thanh nút bấm UI có thể click trực tiếp
+    this.createTopRightActionMenu();
 
     this.craftingUI = new CraftingUI(this, this.inventoryData, this.player, () => this.syncPlayerStats());
     this.passiveTreeUI = new PassiveTreeUI(this, this.passiveTreeManager, () => this.syncPlayerStats());
+    this.characterUI = new CharacterUI(this, this.player);
 
     this.intermissionUI = new IntermissionUI(
       this,
@@ -172,6 +191,8 @@ export class BattleScene extends Phaser.Scene {
       () => this.passiveTreeUI.toggle()
     );
 
+    // Phím tắt bàn phím
+    this.input.keyboard?.on('keydown-C', () => this.characterUI.toggle());
     this.input.keyboard?.on('keydown-I', () => this.craftingUI.toggle());
     this.input.keyboard?.on('keydown-P', () => this.passiveTreeUI.toggle());
     this.input.keyboard?.on('keydown-SPACE', () => {
@@ -195,27 +216,62 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  // Tạo thanh nút bấm trực quan ở góc trên bên phải
+  private triggerLevelUpNotice(): void {
+    this.passiveTreeManager.unspentPoints++;
+    SoundEffects.playWaveClear();
+
+    const lvlText = this.add.text(this.player.x, this.player.y - 45, '★ LEVEL UP! (+1 THIÊN PHÚ) ★', {
+      fontFamily: 'monospace',
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: '#ffd700',
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: lvlText,
+      y: this.player.y - 85,
+      alpha: 0,
+      duration: 1500,
+      onComplete: () => lvlText.destroy(),
+    });
+  }
+
   private createTopRightActionMenu(): void {
     const rx = this.scale.width - 20;
 
-    // Nút Bật/Tắt Âm Thanh
-    this.muteBtn = this.add.text(rx, 20, '🔊 ÂM THANH: BẬT', {
+    // Nút đổi class nhanh
+    const classBtn = this.add.text(rx, 20, '🎭 ĐỔI CLASS', {
       fontFamily: 'monospace',
       fontSize: '13px',
-      color: '#ffffff',
+      fontStyle: 'bold',
+      color: '#a78bfa',
       backgroundColor: '#21262d',
       padding: { x: 10, y: 6 },
     }).setOrigin(1, 0).setScrollFactor(0).setInteractive({ useHandCursor: true });
 
-    this.muteBtn.on('pointerdown', () => {
-      const isMuted = SoundEffects.toggleMute();
-      this.muteBtn.setText(isMuted ? '🔇 ÂM THANH: TẮT' : '🔊 ÂM THANH: BẬT');
-      this.muteBtn.setColor(isMuted ? '#ff5555' : '#ffffff');
+    classBtn.on('pointerdown', () => {
+      const classes: ('Mage' | 'Archer' | 'Knight')[] = ['Mage', 'Archer', 'Knight'];
+      const nextIdx = (classes.indexOf(this.player.characterClass) + 1) % classes.length;
+      this.player.setClass(classes[nextIdx]);
+      this.syncPlayerStats();
     });
 
-    // Nút Mở Hòm Đồ & Craft
-    const craftBtn = this.add.text(rx, 55, '⚒️ HÒM ĐỒ (I)', {
+    // Nút Bảng Chỉ Số [C]
+    const charBtn = this.add.text(rx, 55, '👤 CHỈ SỐ (C)', {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      fontStyle: 'bold',
+      color: '#38bdf8',
+      backgroundColor: '#21262d',
+      padding: { x: 10, y: 6 },
+    }).setOrigin(1, 0).setScrollFactor(0).setInteractive({ useHandCursor: true });
+
+    charBtn.on('pointerdown', () => this.characterUI.toggle());
+
+    // Nút Hòm Đồ [I]
+    const craftBtn = this.add.text(rx, 90, '⚒️ HÒM ĐỒ (I)', {
       fontFamily: 'monospace',
       fontSize: '13px',
       fontStyle: 'bold',
@@ -226,20 +282,19 @@ export class BattleScene extends Phaser.Scene {
 
     craftBtn.on('pointerdown', () => this.craftingUI.toggle());
 
-    // Nút Mở Cây Nội Tại
-    const treeBtn = this.add.text(rx, 90, '🌲 THIÊN PHÚ (P)', {
+    // Nút Cây Thiên Phú [P]
+    const treeBtn = this.add.text(rx, 125, '🌲 THIÊN PHÚ (P)', {
       fontFamily: 'monospace',
       fontSize: '13px',
       fontStyle: 'bold',
-      color: '#00ffff',
+      color: '#4ade80',
       backgroundColor: '#21262d',
       padding: { x: 10, y: 6 },
     }).setOrigin(1, 0).setScrollFactor(0).setInteractive({ useHandCursor: true });
 
     treeBtn.on('pointerdown', () => this.passiveTreeUI.toggle());
 
-    // Tránh click bắn đạn khi ấn vào nút bấm
-    [this.muteBtn, craftBtn, treeBtn].forEach((btn) => {
+    [classBtn, charBtn, craftBtn, treeBtn].forEach((btn) => {
       btn.on('pointerover', () => {
         this.isHoveringInteractiveUI = true;
         btn.setBackgroundColor('#30363d');
@@ -264,16 +319,16 @@ export class BattleScene extends Phaser.Scene {
         loot = new LootDrop(this, x, y);
         this.lootPool.add(loot);
       }
-      loot.spawn(x + (Math.random() * 30 - 15), y + (Math.random() * 30 - 15), d.currencyType, d.name);
+      loot.spawn(x + (Math.random() * 30 - 15), y + (Math.random() * 30 - 15), d);
 
-      if (d.currencyType === 'chaos' || d.currencyType === 'exalted') {
+      if (d.category === 'currency' && (d.currencyType === 'chaos' || d.currencyType === 'exalted')) {
         SoundEffects.playPoETink();
       }
     });
   }
 
-  private showPickupNotice(x: number, y: number, cur: string): void {
-    const t = this.add.text(x, y - 20, `+1 ${cur.toUpperCase()}`, {
+  private showPickupNotice(x: number, y: number, text: string): void {
+    const t = this.add.text(x, y - 20, `+ ${text}`, {
       fontFamily: 'monospace',
       fontSize: '13px',
       fontStyle: 'bold',
@@ -290,6 +345,39 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createProceduralTextures(): void {
+    // 1. Cầu lửa (Fireball)
+    if (!this.textures.exists('proj_fireball')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0xef4444, 1);
+      g.fillCircle(8, 8, 8);
+      g.fillStyle(0xfde047, 1);
+      g.fillCircle(8, 8, 4);
+      g.generateTexture('proj_fireball', 16, 16);
+      g.destroy();
+    }
+
+    // 2. Mũi tên (Split Arrow)
+    if (!this.textures.exists('proj_arrow')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0x22c55e, 1);
+      g.fillRect(0, 5, 14, 2);
+      g.fillTriangle(16, 6, 11, 2, 11, 10);
+      g.generateTexture('proj_arrow', 16, 12);
+      g.destroy();
+    }
+
+    // 3. Sóng xung kích (Ground Slam)
+    if (!this.textures.exists('proj_slam')) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0xd97706, 0.9);
+      g.fillCircle(12, 12, 12);
+      g.fillStyle(0xfef08a, 1);
+      g.fillCircle(12, 12, 6);
+      g.generateTexture('proj_slam', 24, 24);
+      g.destroy();
+    }
+
+    // 4. Quái vật sắc nét
     const list = [
       { key: 'monster_normal', body: 0x991b1b, eye: 0xfef08a, border: 0xef4444 },
       { key: 'monster_magic',  body: 0x1e40af, eye: 0x67e8f9, border: 0x60a5fa },
@@ -345,31 +433,52 @@ export class BattleScene extends Phaser.Scene {
       color: '#ffd700',
     }).setScrollFactor(0);
 
+    this.classLevelText = this.add.text(20, 98, '', {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#a78bfa',
+    }).setScrollFactor(0);
+
     this.lifeBarGfx = this.add.graphics().setScrollFactor(0);
     this.esBarGfx = this.add.graphics().setScrollFactor(0);
+    this.expBarGfx = this.add.graphics().setScrollFactor(0);
   }
 
   private renderHUD(): void {
     this.lifeBarGfx.clear();
     this.esBarGfx.clear();
+    this.expBarGfx.clear();
 
-    const barW = 200;
+    const barW = 220;
     const barH = 16;
     const x = 20;
-    const y = this.scale.height - 40;
+    const y = this.scale.height - 45;
 
+    // Cập nhật text class và level
+    this.classLevelText.setText(`[${this.player.characterClass.toUpperCase()}] CẤP ĐỘ: ${this.player.stats.level}`);
+
+    // Thanh Máu
     this.lifeBarGfx.fillStyle(0x000000, 0.7);
     this.lifeBarGfx.fillRect(x, y, barW, barH);
-
     const lifePct = Math.max(0, this.player.stats.currentLife / this.player.stats.maxLife);
     this.lifeBarGfx.fillStyle(0xdc143c, 1);
     this.lifeBarGfx.fillRect(x, y, barW * lifePct, barH);
 
+    // Thanh Khiên Năng Lượng (ES)
     if (this.player.stats.maxEnergyShield > 0) {
       const esPct = Math.max(0, this.player.stats.energyShield / this.player.stats.maxEnergyShield);
-      this.esBarGfx.fillStyle(0x1e90ff, 0.85);
+      this.esBarGfx.fillStyle(0x1e90ff, 0.9);
       this.esBarGfx.fillRect(x, y - 8, barW * esPct, 6);
     }
+
+    // THANH KINH NGHIỆM (EXP) Ở ĐÁY MÀN HÌNH
+    const expW = this.scale.width;
+    const expPct = Math.max(0, this.player.stats.currentExp / this.player.stats.maxExp);
+    this.expBarGfx.fillStyle(0x1e293b, 0.9);
+    this.expBarGfx.fillRect(0, this.scale.height - 8, expW, 8);
+    this.expBarGfx.fillStyle(0x38bdf8, 1);
+    this.expBarGfx.fillRect(0, this.scale.height - 8, expW * expPct, 8);
   }
 
   private spawnMonsterWave(): void {
@@ -378,7 +487,8 @@ export class BattleScene extends Phaser.Scene {
       !this.waveManager.isWaveActive || 
       this.intermissionUI.getIsShowing() ||
       this.craftingUI.getIsOpen() ||
-      this.passiveTreeUI.getIsOpen()
+      this.passiveTreeUI.getIsOpen() ||
+      this.characterUI.getIsOpen()
     ) {
       return;
     }
@@ -473,7 +583,8 @@ export class BattleScene extends Phaser.Scene {
     const isUIBlocking = 
       this.intermissionUI.getIsShowing() || 
       this.craftingUI.getIsOpen() || 
-      this.passiveTreeUI.getIsOpen();
+      this.passiveTreeUI.getIsOpen() ||
+      this.characterUI.getIsOpen();
 
     if (isUIBlocking) {
       const body = this.player.body as Phaser.Physics.Arcade.Body;
@@ -493,7 +604,6 @@ export class BattleScene extends Phaser.Scene {
     });
 
     const pointer = this.input.activePointer;
-    // Chỉ bắn khi chuột không rê vào các nút bấm HUD
     if (pointer.isDown && !this.isHoveringInteractiveUI) {
       const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.player.tryCastSkills(time, worldPoint.x, worldPoint.y, this.projectilePool);

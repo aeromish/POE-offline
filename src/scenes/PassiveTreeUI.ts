@@ -18,7 +18,7 @@ export class PassiveTreeUI {
     this.scene = scene;
     this.treeManager = manager;
     this.onTreeChanged = onTreeChanged;
-    this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(150);
+    this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(400); // Lớp trên cùng
     this.createPanel();
     this.container.setVisible(false);
   }
@@ -39,12 +39,12 @@ export class PassiveTreeUI {
     const cx = this.scene.scale.width / 2;
     const cy = this.scene.scale.height / 2;
 
-    // Nền tối mờ che sàn đấu
-    const bg = this.scene.add.rectangle(cx, cy, 760, 520, 0x05070a, 0.96);
+    // NỀN ĐEN 100% OPAQUE KHÔNG XUYÊN THẤU VẬT PHẨM DƯỚI SÀN
+    const bg = this.scene.add.rectangle(cx, cy, 760, 520, 0x070a10, 1.0);
     bg.setStrokeStyle(2, 0x30363d);
+    bg.setInteractive();
     this.container.add(bg);
 
-    // Tiêu đề
     const title = this.scene.add.text(cx, cy - 230, 'CÂY KỸ NĂNG NỘI TẠI (PASSIVE TREE) [P]', {
       fontFamily: 'monospace',
       fontSize: '18px',
@@ -53,7 +53,6 @@ export class PassiveTreeUI {
     }).setOrigin(0.5);
     this.container.add(title);
 
-    // Hiển thị điểm cộng
     this.pointsText = this.scene.add.text(cx, cy - 200, '', {
       fontFamily: 'monospace',
       fontSize: '15px',
@@ -62,25 +61,22 @@ export class PassiveTreeUI {
     }).setOrigin(0.5);
     this.container.add(this.pointsText);
 
-    // Lớp đồ họa vẽ đường dây nối liên kết
     this.linesGraphics = this.scene.add.graphics();
     this.container.add(this.linesGraphics);
 
-    // Tooltip mô tả node
-    this.tooltipText = this.scene.add.text(cx, cy + 225, 'Di chuột vào node để xem mô tả. Nhấp chuột để nâng cấp.', {
+    this.tooltipText = this.scene.add.text(cx, cy + 235, 'Di chuột vào node để xem mô tả. Nhấp chuột để nâng cấp.', {
       fontFamily: 'monospace',
-      fontSize: '13px',
+      fontSize: '12px',
       color: '#c9d1d9',
       backgroundColor: '#161b22',
       padding: { x: 10, y: 5 },
     }).setOrigin(0.5);
     this.container.add(this.tooltipText);
 
-    // Tạo các node hình tròn
     for (const [id, node] of Object.entries(PASSIVE_TREE_NODES)) {
       const nx = cx + node.gridX;
       const ny = cy + node.gridY;
-      const radius = node.nodeType === 'keystone' ? 18 : node.nodeType === 'notable' ? 14 : 10;
+      const radius = node.nodeType === 'keystone' ? 17 : node.nodeType === 'notable' ? 13 : 10;
 
       const circle = this.scene.add.circle(nx, ny, radius, 0x333333).setInteractive({ useHandCursor: true });
       circle.setStrokeStyle(2, 0x666666);
@@ -101,11 +97,11 @@ export class PassiveTreeUI {
 
       circle.on('pointerover', () => {
         const status = this.treeManager.allocatedNodeIds.has(id)
-          ? '[ĐÃ KÍCH HOẠT]'
+          ? '[ĐÃ HỌC]'
           : this.treeManager.canAllocate(id)
           ? '[CÓ THỂ HỌC]'
           : '[CHƯA ĐỦ ĐIỀU KIỆN]';
-        this.tooltipText.setText(`${node.name} ${status}\n${node.description}`);
+        this.tooltipText.setText(`${node.name} ${status} - ${node.description}`);
       });
 
       circle.on('pointerout', () => {
@@ -124,7 +120,6 @@ export class PassiveTreeUI {
 
     this.pointsText.setText(`ĐIỂM NỘI TẠI CÒN LẠI: ${this.treeManager.unspentPoints}`);
 
-    // Vẽ lại đường nối
     this.linesGraphics.clear();
     const drawnEdges = new Set<string>();
 
@@ -143,14 +138,12 @@ export class PassiveTreeUI {
         const x2 = cx + targetNode.gridX;
         const y2 = cy + targetNode.gridY;
 
-        // Nếu cả 2 đầu đều đã allocate thì sáng rực, ngược lại xám mờ
         const isConnected = this.treeManager.allocatedNodeIds.has(id) && this.treeManager.allocatedNodeIds.has(targetId);
         this.linesGraphics.lineStyle(isConnected ? 3 : 1, isConnected ? 0xffd700 : 0x22272e, isConnected ? 0.9 : 0.6);
         this.linesGraphics.lineBetween(x1, y1, x2, y2);
       }
     }
 
-    // Cập nhật màu sắc node
     for (const [id, node] of Object.entries(PASSIVE_TREE_NODES)) {
       const sprite = this.nodeSprites.get(id);
       if (!sprite) continue;
@@ -168,9 +161,9 @@ export class PassiveTreeUI {
         sprite.circle.setStrokeStyle(3, 0xffffff);
       } else if (canAlloc) {
         sprite.circle.setFillStyle(0x21262d, 1);
-        sprite.circle.setStrokeStyle(2, 0xffd700); // Viền vàng báo hiệu học được
+        sprite.circle.setStrokeStyle(2, 0xffd700);
       } else {
-        sprite.circle.setFillStyle(0x161b22, 0.8);
+        sprite.circle.setFillStyle(0x161b22, 0.9);
         sprite.circle.setStrokeStyle(1, 0x30363d);
       }
     }

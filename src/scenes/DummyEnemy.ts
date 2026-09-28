@@ -10,6 +10,9 @@ export class DummyEnemy extends Phaser.Physics.Arcade.Sprite {
 
     this.maxLife = isTanky ? 1500 : 300;
     this.stats = {
+      level: 1,
+      currentExp: 0,
+      maxExp: 100,
       maxLife: this.maxLife,
       currentLife: this.maxLife,
       energyShield: isTanky ? 0 : 100,

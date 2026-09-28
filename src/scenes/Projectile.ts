@@ -6,23 +6,32 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
   public remainingPierce: number = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, 'bullet_texture');
+    super(scene, x, y, 'proj_fireball');
   }
 
   fire(x: number, y: number, angleRad: number, ctx: SkillContext): void {
     this.skillCtx = ctx;
     this.remainingPierce = ctx.pierceCount;
 
+    // Đổi texture theo loại kỹ năng
+    const texKey = ctx.id === 'split_arrow' ? 'proj_arrow' : ctx.id === 'ground_slam' ? 'proj_slam' : 'proj_fireball';
+    this.setTexture(texKey);
+
     this.enableBody(true, x, y, true, true);
     this.setRotation(angleRad);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (body) {
-      body.setSize(12, 12);
+      if (ctx.id === 'ground_slam') {
+        body.setSize(24, 24);
+      } else {
+        body.setSize(12, 12);
+      }
       this.scene.physics.velocityFromRotation(angleRad, ctx.projectileSpeed, body.velocity);
     }
 
-    this.scene.time.delayedCall(2500, () => {
+    const lifeTime = ctx.id === 'ground_slam' ? 500 : 2500;
+    this.scene.time.delayedCall(lifeTime, () => {
       if (this.active) this.kill();
     });
   }

@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
-import { CurrencyType } from '../core/items/ItemTypes';
+import { DropResult } from '../core/loot/LootEngine';
 
 export class LootDrop extends Phaser.Physics.Arcade.Sprite {
-  public currencyType!: CurrencyType;
+  public dropData!: DropResult;
   public labelText!: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -13,55 +13,54 @@ export class LootDrop extends Phaser.Physics.Arcade.Sprite {
       fontStyle: 'bold',
       stroke: '#000000',
       strokeThickness: 3,
-      padding: { x: 5, y: 2 },
+      padding: { x: 6, y: 3 },
     }).setOrigin(0.5);
   }
 
-  public spawn(x: number, y: number, curType: CurrencyType, name: string): void {
-    this.currencyType = curType;
+  public spawn(x: number, y: number, data: DropResult): void {
+    this.dropData = data;
     this.enableBody(true, x, y, true, true);
-    this.setVisible(false); // Dùng chính labelText làm hình ảnh hiển thị trên sàn
+    this.setVisible(false);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (body) {
-      body.setSize(30, 20);
+      body.setSize(35, 20);
     }
 
-    let color = '#aa9e82'; // Transmute / Alteration
+    let color = '#ffffff';
     let bgColor = '#111111ee';
 
-    if (curType === 'chaos') {
-      color = '#ffd700';
-      bgColor = '#332200ee';
-    } else if (curType === 'exalted') {
-      color = '#ffffff';
-      bgColor = '#b8860bee'; // Nền ánh vàng Exalted PoE
-    } else if (curType === 'regal') {
-      color = '#4169e1';
-    } else if (curType === 'scouring') {
-      color = '#ffffff';
+    if (data.category === 'currency') {
+      color = data.currencyType === 'chaos' ? '#ffd700' : data.currencyType === 'exalted' ? '#ffffff' : '#aa9e82';
+      bgColor = data.currencyType === 'exalted' ? '#78350fee' : '#111827ee';
+    } else if (data.category === 'equipment') {
+      const r = data.equipmentItem?.rarity;
+      color = r === 'Rare' ? '#ffd700' : r === 'Magic' ? '#60a5fa' : '#ffffff';
+      bgColor = '#1f2937ee';
+    } else if (data.category === 'gem') {
+      color = '#2dd4bf'; // Ngọc màu xanh ngọc biển
+      bgColor = '#0f766eee';
     }
 
-    this.labelText.setText(name);
+    this.labelText.setText(data.name);
     this.labelText.setColor(color);
     this.labelText.setBackgroundColor(bgColor);
     this.labelText.setPosition(x, y);
     this.labelText.setVisible(true);
 
-    // Hiệu ứng nảy nhẹ khi rớt xuống sàn
     this.scene.tweens.add({
       targets: [this, this.labelText],
-      y: y - 16,
+      y: y - 18,
       yoyo: true,
       duration: 180,
       ease: 'Quad.easeOut',
     });
   }
 
-  public collect(): CurrencyType {
-    const c = this.currencyType;
+  public collect(): DropResult {
+    const d = this.dropData;
     this.labelText.setVisible(false);
     this.disableBody(true, true);
-    return c;
+    return d;
   }
 }

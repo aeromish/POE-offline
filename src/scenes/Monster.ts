@@ -19,6 +19,9 @@ export class Monster extends Phaser.Physics.Arcade.Sprite {
   public spawn(x: number, y: number, stats: MonsterStats): void {
     this.monsterStats = stats;
     this.poeStatsWrapper = {
+      level: 1,
+      currentExp: 0,
+      maxExp: 100,
       maxLife: stats.maxLife,
       currentLife: stats.currentLife,
       energyShield: 0,
