@@ -11,7 +11,9 @@ export type StatModifierType =
   | 'crit_chance'
   | 'crit_multiplier'
   | 'extra_projectile'
-  | 'extra_pierce';
+  | 'extra_pierce'
+  | 'pickup_radius'
+  | 'exp_bonus_pct';
 
 export interface StatModifier {
   type: StatModifierType;
@@ -24,9 +26,9 @@ export interface PassiveNode {
   description: string;
   nodeType: PassiveNodeType;
   branch: 'strength' | 'dexterity' | 'intelligence' | 'neutral';
-  gridX: number; // Tọa độ tương đối trên giao diện
+  gridX: number;
   gridY: number;
-  connections: string[]; // Danh sách ID các node liên kết
+  connections: string[];
   modifiers: StatModifier[];
 }
 
@@ -43,4 +45,6 @@ export interface PassiveTreeBonus {
   critMultiplier: number;
   extraProjectile: number;
   extraPierce: number;
+  pickupRadius: number;
+  expBonusPct: number;
 }

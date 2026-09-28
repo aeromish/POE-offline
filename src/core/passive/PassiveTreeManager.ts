@@ -2,8 +2,8 @@ import { PASSIVE_TREE_NODES } from './PassiveTreeData';
 import { PassiveTreeBonus } from './PassiveTreeTypes';
 
 export class PassiveTreeManager {
-  public unspentPoints: number = 1; // Điểm khởi đầu tặng sẵn
-  public allocatedNodeIds: Set<string> = new Set(['root']); // Node gốc đã mở mặc định
+  public unspentPoints: number = 2;
+  public allocatedNodeIds: Set<string> = new Set(['root']);
 
   public canAllocate(nodeId: string): boolean {
     if (this.unspentPoints <= 0) return false;
@@ -12,7 +12,6 @@ export class PassiveTreeManager {
     const node = PASSIVE_TREE_NODES[nodeId];
     if (!node) return false;
 
-    // Kiểm tra có ít nhất 1 node lân cận đã được allocate hay chưa
     return node.connections.some((connectedId) => this.allocatedNodeIds.has(connectedId));
   }
 
@@ -38,6 +37,8 @@ export class PassiveTreeManager {
       critMultiplier: 0,
       extraProjectile: 0,
       extraPierce: 0,
+      pickupRadius: 0,
+      expBonusPct: 0,
     };
 
     for (const id of this.allocatedNodeIds) {
@@ -58,6 +59,8 @@ export class PassiveTreeManager {
           case 'crit_multiplier': bonus.critMultiplier += mod.value; break;
           case 'extra_projectile': bonus.extraProjectile += mod.value; break;
           case 'extra_pierce': bonus.extraPierce += mod.value; break;
+          case 'pickup_radius': bonus.pickupRadius += mod.value; break;
+          case 'exp_bonus_pct': bonus.expBonusPct += mod.value; break;
         }
       }
     }

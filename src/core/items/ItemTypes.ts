@@ -8,6 +8,24 @@ export type CurrencyType =
   | 'exalted' 
   | 'scouring';
 
+export type EquipmentSlot = 
+  | 'weapon' 
+  | 'offhand' 
+  | 'helmet' 
+  | 'bodyArmour' 
+  | 'gloves' 
+  | 'boots' 
+  | 'amulet' 
+  | 'ring1' 
+  | 'ring2' 
+  | 'belt';
+
+export type ItemBaseType = 
+  | 'Sword' | 'Bow' | 'Wand'
+  | 'Shield' | 'Quiver'
+  | 'Helmet' | 'Body Armour' | 'Gloves' | 'Boots'
+  | 'Amulet' | 'Ring' | 'Belt';
+
 export interface AffixDefinition {
   id: string;
   name: string;
@@ -36,15 +54,30 @@ export interface AffixInstance {
 export interface EquipmentItem {
   id: string;
   name: string;
-  baseType: 'Sword' | 'Bow' | 'Wand' | 'Plate';
-  tier: number; // Tier 1 -> Tier 5
+  baseType: ItemBaseType;
+  slot: EquipmentSlot;
+  tier: number;
   rarity: ItemRarity;
   prefixes: AffixInstance[];
   suffixes: AffixInstance[];
 }
 
+export interface EquippedSlots {
+  weapon: EquipmentItem | null;
+  offhand: EquipmentItem | null;
+  helmet: EquipmentItem | null;
+  bodyArmour: EquipmentItem | null;
+  gloves: EquipmentItem | null;
+  boots: EquipmentItem | null;
+  amulet: EquipmentItem | null;
+  ring1: EquipmentItem | null;
+  ring2: EquipmentItem | null;
+  belt: EquipmentItem | null;
+}
+
 export interface InventoryData {
   currencies: Record<CurrencyType, number>;
-  equippedItem: EquipmentItem;
+  equipped: EquippedSlots;
   bag: EquipmentItem[];
+  selectedItemForCraft: EquipmentItem | null;
 }

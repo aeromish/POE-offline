@@ -1,4 +1,896 @@
-import Phaser from 'phaser';
+import os
+
+files = {
+    # 1. Mở rộng PassiveTreeTypes.ts: Thêm pickup_radius & exp_bonus
+    "src/core/passive/PassiveTreeTypes.ts": '''export type PassiveNodeType = 'start' | 'small' | 'notable' | 'keystone';
+export type StatModifierType = 
+  | 'flat_life'
+  | 'flat_es'
+  | 'flat_armour'
+  | 'flat_evasion'
+  | 'inc_phys_damage'
+  | 'inc_fire_damage'
+  | 'attack_speed_pct'
+  | 'movement_speed'
+  | 'crit_chance'
+  | 'crit_multiplier'
+  | 'extra_projectile'
+  | 'extra_pierce'
+  | 'pickup_radius'
+  | 'exp_bonus_pct';
+
+export interface StatModifier {
+  type: StatModifierType;
+  value: number;
+}
+
+export interface PassiveNode {
+  id: string;
+  name: string;
+  description: string;
+  nodeType: PassiveNodeType;
+  branch: 'strength' | 'dexterity' | 'intelligence' | 'neutral';
+  gridX: number;
+  gridY: number;
+  connections: string[];
+  modifiers: StatModifier[];
+}
+
+export interface PassiveTreeBonus {
+  flatLife: number;
+  flatES: number;
+  flatArmour: number;
+  flatEvasion: number;
+  incPhysDamage: number;
+  incFireDamage: number;
+  attackSpeedPct: number;
+  movementSpeed: number;
+  critChance: number;
+  critMultiplier: number;
+  extraProjectile: number;
+  extraPierce: number;
+  pickupRadius: number;
+  expBonusPct: number;
+}
+''',
+
+    # 2. Cập nhật PassiveTreeManager.ts
+    "src/core/passive/PassiveTreeManager.ts": '''import { PASSIVE_TREE_NODES } from './PassiveTreeData';
+import { PassiveTreeBonus } from './PassiveTreeTypes';
+
+export class PassiveTreeManager {
+  public unspentPoints: number = 2;
+  public allocatedNodeIds: Set<string> = new Set(['root']);
+
+  public canAllocate(nodeId: string): boolean {
+    if (this.unspentPoints <= 0) return false;
+    if (this.allocatedNodeIds.has(nodeId)) return false;
+
+    const node = PASSIVE_TREE_NODES[nodeId];
+    if (!node) return false;
+
+    return node.connections.some((connectedId) => this.allocatedNodeIds.has(connectedId));
+  }
+
+  public allocate(nodeId: string): boolean {
+    if (!this.canAllocate(nodeId)) return false;
+
+    this.allocatedNodeIds.add(nodeId);
+    this.unspentPoints--;
+    return true;
+  }
+
+  public calculateTotalBonus(): PassiveTreeBonus {
+    const bonus: PassiveTreeBonus = {
+      flatLife: 0,
+      flatES: 0,
+      flatArmour: 0,
+      flatEvasion: 0,
+      incPhysDamage: 0,
+      incFireDamage: 0,
+      attackSpeedPct: 0,
+      movementSpeed: 0,
+      critChance: 0,
+      critMultiplier: 0,
+      extraProjectile: 0,
+      extraPierce: 0,
+      pickupRadius: 0,
+      expBonusPct: 0,
+    };
+
+    for (const id of this.allocatedNodeIds) {
+      const node = PASSIVE_TREE_NODES[id];
+      if (!node) continue;
+
+      for (const mod of node.modifiers) {
+        switch (mod.type) {
+          case 'flat_life': bonus.flatLife += mod.value; break;
+          case 'flat_es': bonus.flatES += mod.value; break;
+          case 'flat_armour': bonus.flatArmour += mod.value; break;
+          case 'flat_evasion': bonus.flatEvasion += mod.value; break;
+          case 'inc_phys_damage': bonus.incPhysDamage += mod.value; break;
+          case 'inc_fire_damage': bonus.incFireDamage += mod.value; break;
+          case 'attack_speed_pct': bonus.attackSpeedPct += mod.value; break;
+          case 'movement_speed': bonus.movementSpeed += mod.value; break;
+          case 'crit_chance': bonus.critChance += mod.value; break;
+          case 'crit_multiplier': bonus.critMultiplier += mod.value; break;
+          case 'extra_projectile': bonus.extraProjectile += mod.value; break;
+          case 'extra_pierce': bonus.extraPierce += mod.value; break;
+          case 'pickup_radius': bonus.pickupRadius += mod.value; break;
+          case 'exp_bonus_pct': bonus.expBonusPct += mod.value; break;
+        }
+      }
+    }
+
+    return bonus;
+  }
+}
+''',
+
+    # 3. Mở rộng PassiveTreeData.ts lên 35+ Nodes chuẩn PoE
+    "src/core/passive/PassiveTreeData.ts": '''import { PassiveNode } from './PassiveTreeTypes';
+
+export const PASSIVE_TREE_NODES: Record<string, PassiveNode> = {
+  root: {
+    id: 'root',
+    name: 'Gốc Thiên Phú',
+    description: 'Nguồn cội tiềm năng của Lưu Đày Giả.',
+    nodeType: 'start',
+    branch: 'neutral',
+    gridX: 0,
+    gridY: 0,
+    connections: ['str_1', 'dex_1', 'int_1', 'util_pickup', 'util_exp'],
+    modifiers: [],
+  },
+
+  // === NHÁNH TIỆN ÍCH TRUNG TÂM ===
+  util_pickup: {
+    id: 'util_pickup',
+    name: 'Từ Trường Thu Gom',
+    description: '+80 Tầm Hút Đồ (Pickup Radius)',
+    nodeType: 'notable',
+    branch: 'neutral',
+    gridX: -50,
+    gridY: 35,
+    connections: ['root'],
+    modifiers: [{ type: 'pickup_radius', value: 80 }],
+  },
+  util_exp: {
+    id: 'util_exp',
+    name: 'Học Thức Uyên Bác',
+    description: '+25% Kinh Nghiệm (EXP) Thu Nhận',
+    nodeType: 'notable',
+    branch: 'neutral',
+    gridX: 50,
+    gridY: 35,
+    connections: ['root'],
+    modifiers: [{ type: 'exp_bonus_pct', value: 25 }],
+  },
+
+  // === NHÁNH ĐỎ: CHIẾN BINH (STRENGTH) ===
+  str_1: {
+    id: 'str_1',
+    name: 'Thân Thể Bất Khuất',
+    description: '+35 Máu Tối Đa',
+    nodeType: 'small',
+    branch: 'strength',
+    gridX: -70,
+    gridY: -50,
+    connections: ['root', 'str_2', 'str_life_pct'],
+    modifiers: [{ type: 'flat_life', value: 35 }],
+  },
+  str_life_pct: {
+    id: 'str_life_pct',
+    name: 'Huyết Khí Tráng Kiện',
+    description: '+50 Máu Tối Đa',
+    nodeType: 'small',
+    branch: 'strength',
+    gridX: -115,
+    gridY: -15,
+    connections: ['str_1', 'str_bloodline'],
+    modifiers: [{ type: 'flat_life', value: 50 }],
+  },
+  str_bloodline: {
+    id: 'str_bloodline',
+    name: 'Khát Máu Chiến Binh',
+    description: '+60 Máu Tối Đa, +15% Sát Thương Vật Lý',
+    nodeType: 'notable',
+    branch: 'strength',
+    gridX: -165,
+    gridY: -15,
+    connections: ['str_life_pct'],
+    modifiers: [
+      { type: 'flat_life', value: 60 },
+      { type: 'inc_phys_damage', value: 15 },
+    ],
+  },
+  str_2: {
+    id: 'str_2',
+    name: 'Tôi Luyện Thiết Giáp',
+    description: '+45 Giáp Vật Lý',
+    nodeType: 'small',
+    branch: 'strength',
+    gridX: -140,
+    gridY: -75,
+    connections: ['str_1', 'str_3', 'str_iron_will'],
+    modifiers: [{ type: 'flat_armour', value: 45 }],
+  },
+  str_iron_will: {
+    id: 'str_iron_will',
+    name: 'Ý Chí Sắt Đá (Iron Will)',
+    description: '+60 Giáp Vật Lý, +30 Máu Tối Đa',
+    nodeType: 'notable',
+    branch: 'strength',
+    gridX: -190,
+    gridY: -45,
+    connections: ['str_2'],
+    modifiers: [
+      { type: 'flat_armour', value: 60 },
+      { type: 'flat_life', value: 30 },
+    ],
+  },
+  str_3: {
+    id: 'str_3',
+    name: 'Trảm Kích Hùng Lực',
+    description: '+35% Sát Thương Vật Lý',
+    nodeType: 'notable',
+    branch: 'strength',
+    gridX: -210,
+    gridY: -105,
+    connections: ['str_2', 'str_keystone', 'str_resolute'],
+    modifiers: [{ type: 'inc_phys_damage', value: 35 }],
+  },
+  str_resolute: {
+    id: 'str_resolute',
+    name: 'Keystone: Resolute Technique',
+    description: '+60% Sát Thương Vật Lý, Đòn Đánh Luôn Trúng Đích',
+    nodeType: 'keystone',
+    branch: 'strength',
+    gridX: -270,
+    gridY: -75,
+    connections: ['str_3'],
+    modifiers: [{ type: 'inc_phys_damage', value: 60 }],
+  },
+  str_keystone: {
+    id: 'str_keystone',
+    name: 'Keystone: Juggernaut',
+    description: '+100 Máu Tối Đa, +100 Giáp Vật Lý',
+    nodeType: 'keystone',
+    branch: 'strength',
+    gridX: -280,
+    gridY: -135,
+    connections: ['str_3'],
+    modifiers: [
+      { type: 'flat_life', value: 100 },
+      { type: 'flat_armour', value: 100 },
+    ],
+  },
+
+  // === NHÁNH XANH LÁ: XẠ THỦ (DEXTERITY) ===
+  dex_1: {
+    id: 'dex_1',
+    name: 'Thần Tốc Hành Quân',
+    description: '+25 Tốc Độ Di Chuyển',
+    nodeType: 'small',
+    branch: 'dexterity',
+    gridX: 0,
+    gridY: 70,
+    connections: ['root', 'dex_2', 'dex_magnet'],
+    modifiers: [{ type: 'movement_speed', value: 25 }],
+  },
+  dex_magnet: {
+    id: 'dex_magnet',
+    name: 'Gió Cuốn Thu Vật',
+    description: '+60 Tầm Hút Đồ, +15 Tốc Độ Di Chuyển',
+    nodeType: 'small',
+    branch: 'dexterity',
+    gridX: -55,
+    gridY: 105,
+    connections: ['dex_1'],
+    modifiers: [
+      { type: 'pickup_radius', value: 60 },
+      { type: 'movement_speed', value: 15 },
+    ],
+  },
+  dex_2: {
+    id: 'dex_2',
+    name: 'Vũ Điệu Cung Vũ',
+    description: '+25% Tốc Độ Ra Đòn Kỹ Năng',
+    nodeType: 'small',
+    branch: 'dexterity',
+    gridX: 0,
+    gridY: 130,
+    connections: ['dex_1', 'dex_3', 'dex_point_blank'],
+    modifiers: [{ type: 'attack_speed_pct', value: 25 }],
+  },
+  dex_point_blank: {
+    id: 'dex_point_blank',
+    name: 'Điểm Hỏa (Point Blank)',
+    description: '+1 Tia Đạn Bổ Sung, +15% Tốc Độ Bắn',
+    nodeType: 'notable',
+    branch: 'dexterity',
+    gridX: 55,
+    gridY: 165,
+    connections: ['dex_2'],
+    modifiers: [
+      { type: 'extra_projectile', value: 1 },
+      { type: 'attack_speed_pct', value: 15 },
+    ],
+  },
+  dex_3: {
+    id: 'dex_3',
+    name: 'Hư Ứng Vô Ảnh',
+    description: '+35 Tỷ Lệ Né Đòn (Evasion)',
+    nodeType: 'notable',
+    branch: 'dexterity',
+    gridX: 0,
+    gridY: 190,
+    connections: ['dex_2', 'dex_keystone', 'dex_acro'],
+    modifiers: [{ type: 'flat_evasion', value: 35 }],
+  },
+  dex_acro: {
+    id: 'dex_acro',
+    name: 'Keystone: Acrobatics',
+    description: '+50 Tỷ Lệ Né Đòn Cực Hạn, +20 Tốc Chạy',
+    nodeType: 'keystone',
+    branch: 'dexterity',
+    gridX: -65,
+    gridY: 235,
+    connections: ['dex_3'],
+    modifiers: [
+      { type: 'flat_evasion', value: 50 },
+      { type: 'movement_speed', value: 20 },
+    ],
+  },
+  dex_keystone: {
+    id: 'dex_keystone',
+    name: 'Keystone: Deadeye',
+    description: '+2 Tia Đạn Bổ Sung, +2 Lần Xuyên Thấu',
+    nodeType: 'keystone',
+    branch: 'dexterity',
+    gridX: 0,
+    gridY: 245,
+    connections: ['dex_3'],
+    modifiers: [
+      { type: 'extra_projectile', value: 2 },
+      { type: 'extra_pierce', value: 2 },
+    ],
+  },
+
+  // === NHÁNH XANH LAM: PHÁP SƯ (INTELLIGENCE) ===
+  int_1: {
+    id: 'int_1',
+    name: 'Màn Chắn Tâm Linh',
+    description: '+45 Khiên Năng Lượng (Energy Shield)',
+    nodeType: 'small',
+    branch: 'intelligence',
+    gridX: 70,
+    gridY: -50,
+    connections: ['root', 'int_2', 'int_cast_speed'],
+    modifiers: [{ type: 'flat_es', value: 45 }],
+  },
+  int_cast_speed: {
+    id: 'int_cast_speed',
+    name: 'Ngưng Tụ Ma Pháp',
+    description: '+20% Tốc Độ Xuất Chiêu Pháp Thuật',
+    nodeType: 'small',
+    branch: 'intelligence',
+    gridX: 115,
+    gridY: -15,
+    connections: ['int_1', 'int_ci'],
+    modifiers: [{ type: 'attack_speed_pct', value: 20 }],
+  },
+  int_ci: {
+    id: 'int_ci',
+    name: 'Keystone: Chaos Inoculation',
+    description: '+90 Khiên Năng Lượng Tối Đa',
+    nodeType: 'keystone',
+    branch: 'intelligence',
+    gridX: 165,
+    gridY: -15,
+    connections: ['int_cast_speed'],
+    modifiers: [{ type: 'flat_es', value: 90 }],
+  },
+  int_2: {
+    id: 'int_2',
+    name: 'Hỏa Băng Hủy Diệt',
+    description: '+35% Sát Thương Nguyên Tố',
+    nodeType: 'small',
+    branch: 'intelligence',
+    gridX: 140,
+    gridY: -75,
+    connections: ['int_1', 'int_3', 'int_overload'],
+    modifiers: [{ type: 'inc_fire_damage', value: 35 }],
+  },
+  int_overload: {
+    id: 'int_overload',
+    name: 'Quá Tải Nguyên Tố (Elemental Overload)',
+    description: '+10% Tỷ Lệ Chí Mạng, +45 Khiên Năng Lượng',
+    nodeType: 'notable',
+    branch: 'intelligence',
+    gridX: 190,
+    gridY: -45,
+    connections: ['int_2'],
+    modifiers: [
+      { type: 'crit_chance', value: 10 },
+      { type: 'flat_es', value: 45 },
+    ],
+  },
+  int_3: {
+    id: 'int_3',
+    name: 'Khai Mở Tiêu Điểm',
+    description: '+12% Tỷ Lệ Chí Mạng, +0.35x Sát Thương Chí Mạng',
+    nodeType: 'notable',
+    branch: 'intelligence',
+    gridX: 210,
+    gridY: -105,
+    connections: ['int_2', 'int_keystone'],
+    modifiers: [
+      { type: 'crit_chance', value: 12 },
+      { type: 'crit_multiplier', value: 0.35 },
+    ],
+  },
+  int_keystone: {
+    id: 'int_keystone',
+    name: 'Keystone: Archmage',
+    description: '+90 Khiên Năng Lượng, +0.6x Sát Thương Chí Mạng',
+    nodeType: 'keystone',
+    branch: 'intelligence',
+    gridX: 280,
+    gridY: -135,
+    connections: ['int_3'],
+    modifiers: [
+      { type: 'flat_es', value: 90 },
+      { type: 'crit_multiplier', value: 0.6 },
+    ],
+  },
+};
+''',
+
+    # 4. Tạo QuestTypes.ts & QuestManager.ts (Hệ thống nhiệm vụ in-run)
+    "src/core/quests/QuestTypes.ts": '''export type QuestType = 'kill_count' | 'kill_rares' | 'collect_currency' | 'reach_wave';
+
+export interface Quest {
+  id: string;
+  title: string;
+  description: string;
+  type: QuestType;
+  current: number;
+  target: number;
+  rewardText: string;
+  rewardType: 'exp' | 'skill_point' | 'chaos';
+  rewardValue: number;
+  isCompleted: boolean;
+}
+''',
+
+    "src/core/quests/QuestManager.ts": '''import { Quest } from './QuestTypes';
+
+export class QuestManager {
+  public activeQuests: Quest[] = [];
+
+  constructor() {
+    this.initDefaultQuests();
+  }
+
+  public initDefaultQuests(): void {
+    this.activeQuests = [
+      {
+        id: 'q_kill_30',
+        title: 'Càn Quét Chiến Trường',
+        description: 'Tiêu diệt 30 quái vật bất kỳ',
+        type: 'kill_count',
+        current: 0,
+        target: 30,
+        rewardText: '+200 EXP',
+        rewardType: 'exp',
+        rewardValue: 200,
+        isCompleted: false,
+      },
+      {
+        id: 'q_kill_rares',
+        title: 'Thợ Săn Tinh Anh',
+        description: 'Tiêu diệt 2 quái vật Rare (Vàng)',
+        type: 'kill_rares',
+        current: 0,
+        target: 2,
+        rewardText: '+1 Điểm Thiên Phú',
+        rewardType: 'skill_point',
+        rewardValue: 1,
+        isCompleted: false,
+      },
+      {
+        id: 'q_collect_cur',
+        title: 'Kẻ Thu Thập Tiền Tệ',
+        description: 'Thu thập 5 đồng Tiền Tệ (Currency)',
+        type: 'collect_currency',
+        current: 0,
+        target: 5,
+        rewardText: '+2 Chaos Orb',
+        rewardType: 'chaos',
+        rewardValue: 2,
+        isCompleted: false,
+      },
+    ];
+  }
+
+  public onMonsterKilled(isRare: boolean): Quest[] {
+    const completedNow: Quest[] = [];
+    for (const q of this.activeQuests) {
+      if (q.isCompleted) continue;
+      if (q.type === 'kill_count') {
+        q.current++;
+        if (q.current >= q.target) {
+          q.isCompleted = true;
+          completedNow.push(q);
+        }
+      } else if (q.type === 'kill_rares' && isRare) {
+        q.current++;
+        if (q.current >= q.target) {
+          q.isCompleted = true;
+          completedNow.push(q);
+        }
+      }
+    }
+    return completedNow;
+  }
+
+  public onCurrencyCollected(): Quest[] {
+    const completedNow: Quest[] = [];
+    for (const q of this.activeQuests) {
+      if (q.isCompleted) continue;
+      if (q.type === 'collect_currency') {
+        q.current++;
+        if (q.current >= q.target) {
+          q.isCompleted = true;
+          completedNow.push(q);
+        }
+      }
+    }
+    return completedNow;
+  }
+}
+''',
+
+    # 5. Cập nhật Player.ts: Thêm pickupRadius & expBonusPct
+    "src/scenes/Player.ts": '''import Phaser from 'phaser';
+import { CharacterClass, CLASS_BASE_STATS, PoEStats, getExpNeeded } from '../core/stats/CharacterStats';
+import { Socket, SkillContext, ActiveGem, SupportGem } from '../core/gems/GemTypes';
+import { FireballSkill, SplitArrowSkill, GroundSlamSkill, ALL_ACTIVE_SKILLS } from '../core/gems/ActiveGems';
+import { GreaterMultipleProjectiles, AddedFireDamageSupport, PierceSupport } from '../core/gems/SupportGems';
+import { EquipmentItem } from '../core/items/ItemTypes';
+import { PassiveTreeBonus } from '../core/passive/PassiveTreeTypes';
+import { Projectile } from './Projectile';
+
+export class Player extends Phaser.Physics.Arcade.Sprite {
+  public stats: PoEStats;
+  public characterClass: CharacterClass;
+  public sockets: Socket[] = [];
+  public compiledSkills: SkillContext[] = [];
+
+  public pickupRadius: number = 160;
+  public expBonusPct: number = 0;
+
+  private skillCooldownTimers: Map<string, number> = new Map();
+  public skillBonusLevels: Map<string, number> = new Map();
+
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private keyW!: Phaser.Input.Keyboard.Key;
+  private keyA!: Phaser.Input.Keyboard.Key;
+  private keyS!: Phaser.Input.Keyboard.Key;
+  private keyD!: Phaser.Input.Keyboard.Key;
+  private lastHitTime: number = 0;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, characterClass: CharacterClass) {
+    const textureKey = `player_${characterClass.toLowerCase()}`;
+    super(scene, x, y, textureKey, 0);
+
+    this.characterClass = characterClass;
+    this.stats = { ...CLASS_BASE_STATS[characterClass] };
+
+    scene.add.existing(this);
+    scene.physics.add.existing(this);
+
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      body.setSize(18, 22);
+      body.setOffset(7, 10);
+      body.setCollideWorldBounds(true);
+    }
+
+    if (scene.input.keyboard) {
+      this.cursors = scene.input.keyboard.createCursorKeys();
+      this.keyW = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+      this.keyA = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+      this.keyS = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+      this.keyD = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+    }
+
+    this.setupClassSkillAndGems();
+    this.compileSkills();
+  }
+
+  public setClass(newClass: CharacterClass): void {
+    this.characterClass = newClass;
+    const base = CLASS_BASE_STATS[newClass];
+    this.stats = { ...base, level: this.stats.level, currentExp: this.stats.currentExp, maxExp: this.stats.maxExp };
+    this.setTexture(`player_${newClass.toLowerCase()}`);
+    this.setupClassSkillAndGems();
+    this.compileSkills();
+  }
+
+  public setupClassSkillAndGems(): void {
+    if (this.characterClass === 'Mage') {
+      this.sockets = [
+        { color: 'blue', linkGroup: 1, gem: FireballSkill },
+        { color: 'green', linkGroup: 1, gem: GreaterMultipleProjectiles },
+        { color: 'green', linkGroup: 1, gem: PierceSupport },
+        { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
+      ];
+      this.skillBonusLevels.set('fireball', 1);
+    } else if (this.characterClass === 'Archer') {
+      this.sockets = [
+        { color: 'green', linkGroup: 1, gem: SplitArrowSkill },
+        { color: 'green', linkGroup: 1, gem: PierceSupport },
+        { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
+      ];
+      this.skillBonusLevels.set('split_arrow', 1);
+    } else {
+      this.sockets = [
+        { color: 'red', linkGroup: 1, gem: GroundSlamSkill },
+        { color: 'red', linkGroup: 1, gem: AddedFireDamageSupport },
+        { color: 'green', linkGroup: 1, gem: PierceSupport },
+      ];
+      this.skillBonusLevels.set('ground_slam', 1);
+    }
+  }
+
+  public addOrUpgradeSkill(skillId: string): void {
+    const curLvl = this.skillBonusLevels.get(skillId) || 0;
+    this.skillBonusLevels.set(skillId, curLvl + 1);
+
+    const existing = this.sockets.find((s) => s.gem && s.gem.id === skillId);
+    if (!existing) {
+      const newGem = ALL_ACTIVE_SKILLS[skillId];
+      if (newGem) {
+        this.sockets.push({
+          color: newGem.color,
+          linkGroup: this.sockets.length + 1,
+          gem: newGem,
+        });
+      }
+    }
+    this.compileSkills();
+  }
+
+  public gainExp(amount: number): boolean {
+    const finalExp = Math.round(amount * (1 + this.expBonusPct / 100));
+    this.stats.currentExp += finalExp;
+    if (this.stats.currentExp >= this.stats.maxExp) {
+      this.stats.currentExp -= this.stats.maxExp;
+      this.stats.level++;
+      this.stats.maxExp = getExpNeeded(this.stats.level);
+      this.stats.maxLife += 15;
+      this.stats.currentLife = this.stats.maxLife;
+      if (this.stats.maxEnergyShield > 0) {
+        this.stats.maxEnergyShield += 10;
+        this.stats.energyShield = this.stats.maxEnergyShield;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  public recalculateTotalStats(item: EquipmentItem, treeBonus: PassiveTreeBonus): void {
+    const base = CLASS_BASE_STATS[this.characterClass];
+    const levelBonusLife = (this.stats.level - 1) * 15;
+    const levelBonusES = (this.stats.level - 1) * 10;
+    const tierMultiplier = 1 + (item.tier - 1) * 0.4;
+
+    this.pickupRadius = 160 + treeBonus.pickupRadius;
+    this.expBonusPct = treeBonus.expBonusPct;
+
+    this.stats.maxLife = base.maxLife + levelBonusLife + treeBonus.flatLife;
+    this.stats.maxEnergyShield = base.maxEnergyShield + (base.maxEnergyShield > 0 ? levelBonusES : 0) + treeBonus.flatES;
+    this.stats.armour = base.armour + treeBonus.flatArmour;
+    this.stats.evasion = base.evasion + treeBonus.flatEvasion;
+    this.stats.movementSpeed = base.movementSpeed + treeBonus.movementSpeed;
+
+    const allAffixes = [...item.prefixes, ...item.suffixes];
+    for (const aff of allAffixes) {
+      const scaledVal = Math.round(aff.value * tierMultiplier);
+      if (aff.statType === 'flat_life') this.stats.maxLife += scaledVal;
+      if (aff.statType === 'flat_es') this.stats.maxEnergyShield += scaledVal;
+      if (aff.statType === 'armour') this.stats.armour += scaledVal;
+      if (aff.statType === 'movement_speed') this.stats.movementSpeed += scaledVal;
+    }
+
+    this.stats.currentLife = Math.min(this.stats.currentLife, this.stats.maxLife);
+    this.compileSkills(item, treeBonus);
+  }
+
+  public compileSkills(equippedItem?: EquipmentItem, treeBonus?: PassiveTreeBonus): void {
+    this.compiledSkills = [];
+    const activeSockets = this.sockets.filter((s) => s.gem && 'getInitialContext' in s.gem);
+
+    let addedDmg = 0;
+    let incDmg = 0;
+    let atkSpeedPct = 0;
+    let critChance = 0;
+    let critMultiplier = 0;
+    let extraProj = 0;
+    let extraPierce = 0;
+
+    const tierMult = equippedItem ? 1 + (equippedItem.tier - 1) * 0.4 : 1;
+
+    if (equippedItem) {
+      const allAff = [...equippedItem.prefixes, ...equippedItem.suffixes];
+      for (const a of allAff) {
+        const val = Math.round(a.value * tierMult);
+        if (a.statType === 'added_damage') addedDmg += val;
+        if (a.statType === 'inc_damage') incDmg += val;
+        if (a.statType === 'attack_speed') atkSpeedPct += val;
+        if (a.statType === 'crit_chance') critChance += val;
+      }
+    }
+
+    if (treeBonus) {
+      atkSpeedPct += treeBonus.attackSpeedPct;
+      critChance += treeBonus.critChance;
+      critMultiplier += treeBonus.critMultiplier;
+      extraProj += treeBonus.extraProjectile;
+      extraPierce += treeBonus.extraPierce;
+    }
+
+    for (const activeSock of activeSockets) {
+      const activeGem = activeSock.gem as ActiveGem;
+      const sLvl = this.skillBonusLevels.get(activeGem.id) || 1;
+      const ctx = activeGem.getInitialContext(sLvl);
+
+      if (ctx.damageType === 'physical' && treeBonus) {
+        incDmg += treeBonus.incPhysDamage;
+      } else if (ctx.damageType === 'fire' && treeBonus) {
+        incDmg += treeBonus.incFireDamage;
+      }
+
+      ctx.addedMinDamage += addedDmg;
+      ctx.addedMaxDamage += addedDmg;
+      ctx.increasedDamagePercent += incDmg;
+      ctx.attackSpeedMultiplier *= (1 + atkSpeedPct / 100);
+      ctx.critChance += critChance;
+      ctx.critMultiplier += critMultiplier;
+      ctx.projectileCount += extraProj;
+      ctx.pierceCount += extraPierce;
+
+      const linkedSupports = this.sockets.filter(
+        (s) => s.linkGroup === activeSock.linkGroup && s.gem && 'apply' in s.gem
+      );
+
+      for (const suppSock of linkedSupports) {
+        const supportGem = suppSock.gem as SupportGem;
+        supportGem.apply(ctx);
+      }
+
+      this.compiledSkills.push(ctx);
+    }
+  }
+
+  public tryCastSkills(
+    time: number,
+    targetX: number,
+    targetY: number,
+    projectilePool: Phaser.Physics.Arcade.Group
+  ): void {
+    if (this.compiledSkills.length === 0) return;
+
+    for (const skill of this.compiledSkills) {
+      const lastCast = this.skillCooldownTimers.get(skill.id) || 0;
+      const cooldown = skill.baseCooldown / skill.attackSpeedMultiplier;
+      if (time - lastCast < cooldown) continue;
+
+      this.skillCooldownTimers.set(skill.id, time);
+
+      const baseAngle = Phaser.Math.Angle.Between(this.x, this.y, targetX, targetY);
+      const count = skill.projectileCount;
+      const spreadAngle = 0.16;
+
+      for (let i = 0; i < count; i++) {
+        const p = projectilePool.get(this.x, this.y) as Projectile;
+        if (!p) continue;
+
+        const offset = (i - (count - 1) / 2) * spreadAngle;
+        p.fire(this.x, this.y, baseAngle + offset, skill);
+      }
+    }
+  }
+
+  public getCooldownPercent(skillId: string, time: number): number {
+    const skill = this.compiledSkills.find((s) => s.id === skillId);
+    if (!skill) return 0;
+    const lastCast = this.skillCooldownTimers.get(skillId) || 0;
+    const cooldown = skill.baseCooldown / skill.attackSpeedMultiplier;
+    const elapsed = time - lastCast;
+    if (elapsed >= cooldown) return 0;
+    return 1 - elapsed / cooldown;
+  }
+
+  public takePhysicalDamage(rawDamage: number, time: number): boolean {
+    if (Math.random() * 100 < this.stats.evasion) {
+      return false;
+    }
+
+    const dr = this.stats.armour / (this.stats.armour + 5 * rawDamage);
+    const damage = Math.max(1, Math.round(rawDamage * (1 - Math.min(dr, 0.9))));
+
+    this.lastHitTime = time;
+
+    let remaining = damage;
+    if (this.stats.energyShield > 0) {
+      const absorbed = Math.min(this.stats.energyShield, remaining);
+      this.stats.energyShield -= absorbed;
+      remaining -= absorbed;
+    }
+
+    if (remaining > 0) {
+      this.stats.currentLife = Math.max(0, this.stats.currentLife - remaining);
+    }
+
+    this.setTint(0xff3333);
+    this.scene.time.delayedCall(120, () => {
+      if (this.active) this.clearTint();
+    });
+
+    return true;
+  }
+
+  update(time: number, delta: number): void {
+    const speed = this.stats.movementSpeed;
+    let vx = 0;
+    let vy = 0;
+
+    if (this.cursors.left.isDown || this.keyA.isDown) vx -= 1;
+    if (this.cursors.right.isDown || this.keyD.isDown) vx += 1;
+    if (this.cursors.up.isDown || this.keyW.isDown) vy -= 1;
+    if (this.cursors.down.isDown || this.keyS.isDown) vy += 1;
+
+    if (vx !== 0 && vy !== 0) {
+      vx *= 0.7071;
+      vy *= 0.7071;
+    }
+
+    this.setVelocity(vx * speed, vy * speed);
+
+    const prefix = `player_${this.characterClass.toLowerCase()}`;
+    if (vx > 0) {
+      this.play(`${prefix}_walk_right`, true);
+      this.setFlipX(false);
+    } else if (vx < 0) {
+      this.play(`${prefix}_walk_right`, true);
+      this.setFlipX(true);
+    } else if (vy > 0) {
+      this.play(`${prefix}_walk_down`, true);
+      this.setFlipX(false);
+    } else if (vy < 0) {
+      this.play(`${prefix}_walk_up`, true);
+      this.setFlipX(false);
+    } else {
+      this.anims.stop();
+    }
+
+    if (
+      this.stats.maxEnergyShield > 0 &&
+      this.stats.energyShield < this.stats.maxEnergyShield &&
+      time - this.lastHitTime > this.stats.esRechargeDelay * 1000
+    ) {
+      const rechargeRate = (this.stats.maxEnergyShield * 0.25 * delta) / 1000;
+      this.stats.energyShield = Math.min(this.stats.maxEnergyShield, this.stats.energyShield + rechargeRate);
+    }
+  }
+}
+''',
+
+    # 6. Cập nhật BattleScene.ts: Auto-Attack, Auto-Loot, Quest Tracker, VFX Hit Bursts
+    "src/scenes/BattleScene.ts": '''import Phaser from 'phaser';
 import { Player } from './Player';
 import { Projectile } from './Projectile';
 import { Monster } from './Monster';
@@ -41,29 +933,16 @@ export class BattleScene extends Phaser.Scene {
       exalted: 1,
       scouring: 2,
     },
-    equipped: {
-      weapon: {
-        id: 'eq_starter_wep',
-        name: 'Kiếm Sắt Rèn',
-        baseType: 'Sword',
-        slot: 'weapon',
-        tier: 1,
-        rarity: 'Normal',
-        prefixes: [],
-        suffixes: [],
-      },
-      offhand: null,
-      helmet: null,
-      bodyArmour: null,
-      gloves: null,
-      boots: null,
-      amulet: null,
-      ring1: null,
-      ring2: null,
-      belt: null,
+    equippedItem: {
+      id: 'eq_starter',
+      name: 'Vũ khí Sắt Rèn',
+      baseType: 'Sword',
+      tier: 1,
+      rarity: 'Normal',
+      prefixes: [],
+      suffixes: [],
     },
     bag: [],
-    selectedItemForCraft: null,
   };
 
   private waveText!: Phaser.GameObjects.Text;
@@ -76,8 +955,11 @@ export class BattleScene extends Phaser.Scene {
 
   private skillBarContainer!: Phaser.GameObjects.Container;
   private skillSlotWidgets: { bg: Phaser.GameObjects.Rectangle; icon: Phaser.GameObjects.Text; lvl: Phaser.GameObjects.Text; cdGfx: Phaser.GameObjects.Graphics; id: string }[] = [];
+
+  // QUEST TRACKER HUD
   private questTrackerText!: Phaser.GameObjects.Text;
 
+  // CỜ BẬT/TẮT TỰ ĐỘNG
   public autoAttackEnabled: boolean = true;
   public autoLootEnabled: boolean = true;
   private autoAtkBtn!: Phaser.GameObjects.Text;
@@ -165,7 +1047,7 @@ export class BattleScene extends Phaser.Scene {
       }
     });
 
-    // Va chạm: Nhặt đồ
+    // Va chạm: Nhặt đồ trực tiếp
     this.physics.add.overlap(this.player, this.lootPool, (_playerObj, lootObj) => {
       const loot = lootObj as LootDrop;
       if (!loot.active) return;
@@ -213,6 +1095,7 @@ export class BattleScene extends Phaser.Scene {
       () => this.passiveTreeUI.toggle()
     );
 
+    // Phím tắt bàn phím
     this.input.keyboard?.on('keydown-C', () => this.characterUI.toggle());
     this.input.keyboard?.on('keydown-I', () => this.craftingUI.toggle());
     this.input.keyboard?.on('keydown-P', () => this.passiveTreeUI.toggle());
@@ -239,11 +1122,12 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  // TỰ ĐỘNG BẮN QUÁI GẦN NHẤT
   private performAutoAttack(time: number): void {
     if (!this.autoAttackEnabled || this.player.compiledSkills.length === 0) return;
 
     let nearestMonster: Monster | null = null;
-    let minDistance = 750;
+    let minDistance = 750; // Tầm quét mắt thần
 
     this.monsterPool.children.each((child) => {
       const mon = child as Monster;
@@ -262,6 +1146,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  // TỰ ĐỘNG HÚT ĐỒ TRONG PHẠM VI (AUTO LOOT MAGNET)
   private performAutoLoot(): void {
     if (!this.autoLootEnabled) return;
 
@@ -271,6 +1156,7 @@ export class BattleScene extends Phaser.Scene {
       if (loot.active) {
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, loot.x, loot.y);
         if (dist <= magnetRadius) {
+          // Bay nhanh về phía nhân vật
           this.physics.moveToObject(loot, this.player, 550);
           if (dist < 25) {
             this.collectLootItem(loot);
@@ -290,7 +1176,7 @@ export class BattleScene extends Phaser.Scene {
       const completed = this.questManager.onCurrencyCollected();
       this.processCompletedQuests(completed);
     } else if (d.category === 'equipment' && d.equipmentItem) {
-      if (this.inventoryData.bag.length < 12) {
+      if (this.inventoryData.bag.length < 6) {
         this.inventoryData.bag.push(d.equipmentItem);
         this.showPickupNotice(loot.x, loot.y, `TÚI: ${d.name}`);
       } else {
@@ -304,8 +1190,9 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  // HIỆU ỨNG TÓE LỬA / BĂNG / SÉT KHI TRÚNG ĐÍCH
   private spawnSkillImpactBurst(x: number, y: number, damageType: string): void {
-    let color = 0xef4444;
+    let color = 0xef4444; // Lửa
     if (damageType === 'cold') color = 0x06b6d4;
     else if (damageType === 'lightning') color = 0xfacc15;
     else if (damageType === 'chaos') color = 0xa855f7;
@@ -338,7 +1225,7 @@ export class BattleScene extends Phaser.Scene {
         this.inventoryData.currencies['chaos'] += q.rewardValue;
       }
 
-      const qNotice = this.add.text(this.scale.width / 2, 140, `🏆 HOÀN THÀNH: ${q.title}\nNHẬN: ${q.rewardText}`, {
+      const qNotice = this.add.text(this.scale.width / 2, 140, `🏆 HOÀN THÀNH: ${q.title}\\nNHẬN: ${q.rewardText}`, {
         fontFamily: 'monospace',
         fontSize: '15px',
         fontStyle: 'bold',
@@ -506,6 +1393,7 @@ export class BattleScene extends Phaser.Scene {
   private createTopRightActionMenu(): void {
     const rx = this.scale.width - 20;
 
+    // Nút Auto Attack
     this.autoAtkBtn = this.add.text(rx, 20, '🎯 TỰ ĐÁNH: BẬT [T]', {
       fontFamily: 'monospace',
       fontSize: '12px',
@@ -516,6 +1404,7 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(1, 0).setScrollFactor(0).setInteractive({ useHandCursor: true });
     this.autoAtkBtn.on('pointerdown', () => this.toggleAutoAttack());
 
+    // Nút Auto Loot
     this.autoLootBtn = this.add.text(rx, 50, '🧲 HÚT ĐỒ: BẬT [F]', {
       fontFamily: 'monospace',
       fontSize: '12px',
@@ -526,6 +1415,7 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(1, 0).setScrollFactor(0).setInteractive({ useHandCursor: true });
     this.autoLootBtn.on('pointerdown', () => this.toggleAutoLoot());
 
+    // Nút Đổi Class
     const classBtn = this.add.text(rx, 80, '🎭 ĐỔI CLASS', {
       fontFamily: 'monospace',
       fontSize: '12px',
@@ -543,6 +1433,7 @@ export class BattleScene extends Phaser.Scene {
       this.rebuildSkillBarWidgets();
     });
 
+    // Nút Chỉ Số
     const charBtn = this.add.text(rx, 110, '👤 CHỈ SỐ (C)', {
       fontFamily: 'monospace',
       fontSize: '12px',
@@ -553,7 +1444,8 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(1, 0).setScrollFactor(0).setInteractive({ useHandCursor: true });
     charBtn.on('pointerdown', () => this.characterUI.toggle());
 
-    const craftBtn = this.add.text(rx, 140, '⚒️ 10 Ô ĐỒ & TÚI (I)', {
+    // Nút Hòm Đồ
+    const craftBtn = this.add.text(rx, 140, '⚒️ HÒM & RÈN (I)', {
       fontFamily: 'monospace',
       fontSize: '12px',
       fontStyle: 'bold',
@@ -563,6 +1455,7 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(1, 0).setScrollFactor(0).setInteractive({ useHandCursor: true });
     craftBtn.on('pointerdown', () => this.craftingUI.toggle());
 
+    // Nút Thiên Phú
     const treeBtn = this.add.text(rx, 170, '🌲 THIÊN PHÚ (P)', {
       fontFamily: 'monospace',
       fontSize: '12px',
@@ -587,7 +1480,7 @@ export class BattleScene extends Phaser.Scene {
 
   private syncPlayerStats(): void {
     const bonus = this.passiveTreeManager.calculateTotalBonus();
-    this.player.recalculateTotalStats(this.inventoryData.equipped, bonus);
+    this.player.recalculateTotalStats(this.inventoryData.equippedItem, bonus);
   }
 
   private dropLoot(x: number, y: number, rarity: any): void {
@@ -775,6 +1668,7 @@ export class BattleScene extends Phaser.Scene {
       color: '#a78bfa',
     }).setScrollFactor(0);
 
+    // BẢNG QUEST TRACKER Ở GÓC PHẢI DƯỚI MENU
     this.questTrackerText = this.add.text(this.scale.width - 20, 210, '', {
       fontFamily: 'monospace',
       fontSize: '11px',
@@ -821,13 +1715,15 @@ export class BattleScene extends Phaser.Scene {
     this.expBarGfx.fillStyle(0x38bdf8, 1);
     this.expBarGfx.fillRect(0, this.scale.height - 8, expW * expPct, 8);
 
-    let qStr = '❖ NHIỆM VỤ ĐANG LÀM:\n';
+    // Cập nhật Quest Tracker
+    let qStr = '❖ NHIỆM VỤ ĐANG THỰC HIỆN:\\n';
     this.questManager.activeQuests.forEach((q) => {
-      const status = q.isCompleted ? '✓ XONG' : `${q.current}/${q.target}`;
-      qStr += `• ${q.title}: ${status}\n`;
+      const status = q.isCompleted ? '✓ ĐÃ XONG' : `${q.current}/${q.target}`;
+      qStr += `• ${q.title}: ${status}\\n`;
     });
     this.questTrackerText.setText(qStr);
 
+    // Hồi chiêu skill bar
     this.skillSlotWidgets.forEach((w) => {
       w.cdGfx.clear();
       const cdPct = this.player.getCooldownPercent(w.id, time);
@@ -917,7 +1813,7 @@ export class BattleScene extends Phaser.Scene {
     const overText = this.add.text(
       this.scale.width / 2,
       this.scale.height / 2,
-      'BẠN ĐÃ TỬ NẠN!\nNhấn [SPACE] để Hồi Sinh',
+      'BẠN ĐÃ TỬ NẠN!\\nNhấn [SPACE] để Hồi Sinh',
       {
         fontFamily: 'monospace',
         fontSize: '32px',
@@ -954,6 +1850,7 @@ export class BattleScene extends Phaser.Scene {
     this.player.update(time, delta);
     this.renderHUD(time);
 
+    // KÍCH HOẠT AUTO ATTACK & AUTO LOOT
     this.performAutoAttack(time);
     this.performAutoLoot();
 
@@ -965,6 +1862,7 @@ export class BattleScene extends Phaser.Scene {
       return true;
     });
 
+    // Nếu người chơi chủ động click chuột trái thì xả thêm về hướng trỏ chuột
     const pointer = this.input.activePointer;
     if (pointer.isDown && !this.isHoveringInteractiveUI) {
       const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
@@ -973,3 +1871,12 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 }
+'''
+}
+
+for path, content in files.items():
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print(f"✓ Đã cập nhật thành công: {path}")
+
+print("\nHoàn tất nâng cấp: Auto Attack, Auto Loot Magnet, Skill VFX Bursts, Quest System & 35-Node Passive Tree!")

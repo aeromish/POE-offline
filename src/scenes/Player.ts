@@ -3,7 +3,7 @@ import { CharacterClass, CLASS_BASE_STATS, PoEStats, getExpNeeded } from '../cor
 import { Socket, SkillContext, ActiveGem, SupportGem } from '../core/gems/GemTypes';
 import { FireballSkill, SplitArrowSkill, GroundSlamSkill, ALL_ACTIVE_SKILLS } from '../core/gems/ActiveGems';
 import { GreaterMultipleProjectiles, AddedFireDamageSupport, PierceSupport } from '../core/gems/SupportGems';
-import { EquipmentItem } from '../core/items/ItemTypes';
+import { EquippedSlots } from '../core/items/ItemTypes';
 import { PassiveTreeBonus } from '../core/passive/PassiveTreeTypes';
 import { Projectile } from './Projectile';
 
@@ -12,6 +12,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public characterClass: CharacterClass;
   public sockets: Socket[] = [];
   public compiledSkills: SkillContext[] = [];
+
+  public pickupRadius: number = 160;
+  public expBonusPct: number = 0;
 
   private skillCooldownTimers: Map<string, number> = new Map();
   public skillBonusLevels: Map<string, number> = new Map();
@@ -106,7 +109,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   public gainExp(amount: number): boolean {
-    this.stats.currentExp += amount;
+    const finalExp = Math.round(amount * (1 + this.expBonusPct / 100));
+    this.stats.currentExp += finalExp;
     if (this.stats.currentExp >= this.stats.maxExp) {
       this.stats.currentExp -= this.stats.maxExp;
       this.stats.level++;
@@ -122,34 +126,47 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return false;
   }
 
-  public recalculateTotalStats(item: EquipmentItem, treeBonus: PassiveTreeBonus): void {
+  // TÍNH TOÁN CHỈ SỐ TỪ CẢ 10 Ô TRANG BỊ
+  public recalculateTotalStats(equipped: EquippedSlots, treeBonus: PassiveTreeBonus): void {
     const base = CLASS_BASE_STATS[this.characterClass];
     const levelBonusLife = (this.stats.level - 1) * 15;
     const levelBonusES = (this.stats.level - 1) * 10;
 
-    // Hệ số khuếch đại theo Tier trang bị: +40% mỗi Tier
-    const tierMultiplier = 1 + (item.tier - 1) * 0.4;
+    this.pickupRadius = 160 + treeBonus.pickupRadius;
+    this.expBonusPct = treeBonus.expBonusPct;
 
-    this.stats.maxLife = base.maxLife + levelBonusLife + treeBonus.flatLife;
-    this.stats.maxEnergyShield = base.maxEnergyShield + (base.maxEnergyShield > 0 ? levelBonusES : 0) + treeBonus.flatES;
-    this.stats.armour = base.armour + treeBonus.flatArmour;
-    this.stats.evasion = base.evasion + treeBonus.flatEvasion;
-    this.stats.movementSpeed = base.movementSpeed + treeBonus.movementSpeed;
+    let totalFlatLife = base.maxLife + levelBonusLife + treeBonus.flatLife;
+    let totalFlatES = base.maxEnergyShield + (base.maxEnergyShield > 0 ? levelBonusES : 0) + treeBonus.flatES;
+    let totalArmour = base.armour + treeBonus.flatArmour;
+    let totalEvasion = base.evasion + treeBonus.flatEvasion;
+    let totalMoveSpeed = base.movementSpeed + treeBonus.movementSpeed;
 
-    const allAffixes = [...item.prefixes, ...item.suffixes];
-    for (const aff of allAffixes) {
-      const scaledVal = Math.round(aff.value * tierMultiplier);
-      if (aff.statType === 'flat_life') this.stats.maxLife += scaledVal;
-      if (aff.statType === 'flat_es') this.stats.maxEnergyShield += scaledVal;
-      if (aff.statType === 'armour') this.stats.armour += scaledVal;
-      if (aff.statType === 'movement_speed') this.stats.movementSpeed += scaledVal;
+    // Duyệt qua toàn bộ 10 ô trang bị đang mặc
+    for (const item of Object.values(equipped)) {
+      if (!item) continue;
+      const tierMult = 1 + (item.tier - 1) * 0.4;
+      const allAffixes = [...item.prefixes, ...item.suffixes];
+
+      for (const aff of allAffixes) {
+        const scaledVal = Math.round(aff.value * tierMult);
+        if (aff.statType === 'flat_life') totalFlatLife += scaledVal;
+        if (aff.statType === 'flat_es') totalFlatES += scaledVal;
+        if (aff.statType === 'armour') totalArmour += scaledVal;
+        if (aff.statType === 'movement_speed') totalMoveSpeed += scaledVal;
+      }
     }
 
+    this.stats.maxLife = totalFlatLife;
+    this.stats.maxEnergyShield = totalFlatES;
+    this.stats.armour = totalArmour;
+    this.stats.evasion = totalEvasion;
+    this.stats.movementSpeed = totalMoveSpeed;
+
     this.stats.currentLife = Math.min(this.stats.currentLife, this.stats.maxLife);
-    this.compileSkills(item, treeBonus);
+    this.compileSkills(equipped, treeBonus);
   }
 
-  public compileSkills(equippedItem?: EquipmentItem, treeBonus?: PassiveTreeBonus): void {
+  public compileSkills(equipped?: EquippedSlots, treeBonus?: PassiveTreeBonus): void {
     this.compiledSkills = [];
     const activeSockets = this.sockets.filter((s) => s.gem && 'getInitialContext' in s.gem);
 
@@ -161,16 +178,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     let extraProj = 0;
     let extraPierce = 0;
 
-    const tierMult = equippedItem ? 1 + (equippedItem.tier - 1) * 0.4 : 1;
-
-    if (equippedItem) {
-      const allAff = [...equippedItem.prefixes, ...equippedItem.suffixes];
-      for (const a of allAff) {
-        const val = Math.round(a.value * tierMult);
-        if (a.statType === 'added_damage') addedDmg += val;
-        if (a.statType === 'inc_damage') incDmg += val;
-        if (a.statType === 'attack_speed') atkSpeedPct += val;
-        if (a.statType === 'crit_chance') critChance += val;
+    // Thu thập chỉ số sát thương từ toàn bộ trang bị
+    if (equipped) {
+      for (const item of Object.values(equipped)) {
+        if (!item) continue;
+        const tierMult = 1 + (item.tier - 1) * 0.4;
+        const allAff = [...item.prefixes, ...item.suffixes];
+        for (const a of allAff) {
+          const val = Math.round(a.value * tierMult);
+          if (a.statType === 'added_damage') addedDmg += val;
+          if (a.statType === 'inc_damage') incDmg += val;
+          if (a.statType === 'attack_speed') atkSpeedPct += val;
+          if (a.statType === 'crit_chance') critChance += val;
+        }
       }
     }
 

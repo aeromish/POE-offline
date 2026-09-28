@@ -1,4 +1,4 @@
-import { CurrencyType, EquipmentItem } from '../items/ItemTypes';
+import { CurrencyType, EquipmentItem, ItemBaseType, EquipmentSlot } from '../items/ItemTypes';
 import { MonsterRarity } from '../monsters/MonsterTypes';
 import { CraftingEngine } from '../crafting/CraftingEngine';
 
@@ -11,6 +11,21 @@ export interface DropResult {
 }
 
 export class LootEngine {
+  private static readonly ITEM_POOLS: { base: ItemBaseType; slot: EquipmentSlot }[] = [
+    { base: 'Sword', slot: 'weapon' },
+    { base: 'Bow', slot: 'weapon' },
+    { base: 'Wand', slot: 'weapon' },
+    { base: 'Shield', slot: 'offhand' },
+    { base: 'Quiver', slot: 'offhand' },
+    { base: 'Helmet', slot: 'helmet' },
+    { base: 'Body Armour', slot: 'bodyArmour' },
+    { base: 'Gloves', slot: 'gloves' },
+    { base: 'Boots', slot: 'boots' },
+    { base: 'Amulet', slot: 'amulet' },
+    { base: 'Ring', slot: 'ring1' },
+    { base: 'Belt', slot: 'belt' },
+  ];
+
   public static rollMonsterDrops(rarity: MonsterRarity): DropResult[] {
     const drops: DropResult[] = [];
     const roll = Math.random();
@@ -27,8 +42,8 @@ export class LootEngine {
     for (let i = 0; i < numDrops; i++) {
       const typeRoll = Math.random();
 
-      // 55% rơi Tiền tệ Crafting
-      if (typeRoll < 0.55) {
+      // 50% rơi Currency
+      if (typeRoll < 0.5) {
         const cRoll = Math.random() * 100;
         let cur: CurrencyType = 'transmutation';
         let name = 'Orb of Transmutation';
@@ -52,16 +67,16 @@ export class LootEngine {
 
         drops.push({ category: 'currency', currencyType: cur, name });
       }
-      // 30% rơi Trang bị có Tier
+      // 35% rơi Trang bị thuộc 10 vị trí
       else if (typeRoll < 0.85) {
-        const bases: ('Sword' | 'Bow' | 'Wand' | 'Plate')[] = ['Sword', 'Bow', 'Wand', 'Plate'];
-        const base = bases[Math.floor(Math.random() * bases.length)];
+        const chosen = this.ITEM_POOLS[Math.floor(Math.random() * this.ITEM_POOLS.length)];
         const itemTier = rarity === 'Boss' ? 3 : rarity === 'Rare' ? 2 : 1;
 
         const item: EquipmentItem = {
           id: `eq_${Date.now()}_${Math.random()}`,
-          name: `${base}`,
-          baseType: base,
+          name: chosen.base,
+          baseType: chosen.base,
+          slot: chosen.slot,
           tier: itemTier,
           rarity: 'Normal',
           prefixes: [],
