@@ -4,9 +4,12 @@ import { Projectile } from './Projectile';
 import { Monster } from './Monster';
 import { LootDrop } from './LootDrop';
 import { CraftingUI } from './CraftingUI';
+import { PassiveTreeUI } from './PassiveTreeUI';
+import { IntermissionUI } from './IntermissionUI';
 import { WaveManager } from '../core/monsters/WaveManager';
 import { DamageEngine } from '../core/combat/DamageEngine';
 import { LootEngine } from '../core/loot/LootEngine';
+import { PassiveTreeManager } from '../core/passive/PassiveTreeManager';
 import { InventoryData } from '../core/items/ItemTypes';
 import { CombatUI } from './CombatUI';
 
@@ -16,8 +19,12 @@ export class BattleScene extends Phaser.Scene {
   private monsterPool!: Phaser.Physics.Arcade.Group;
   private lootPool!: Phaser.Physics.Arcade.Group;
   private waveManager: WaveManager = new WaveManager();
+  private passiveTreeManager: PassiveTreeManager = new PassiveTreeManager();
 
   private craftingUI!: CraftingUI;
+  private passiveTreeUI!: PassiveTreeUI;
+  private intermissionUI!: IntermissionUI;
+
   private inventoryData: InventoryData = {
     currencies: {
       transmutation: 4,
@@ -39,7 +46,6 @@ export class BattleScene extends Phaser.Scene {
 
   private waveText!: Phaser.GameObjects.Text;
   private timerText!: Phaser.GameObjects.Text;
-  private invHintText!: Phaser.GameObjects.Text;
   private lifeBarGfx!: Phaser.GameObjects.Graphics;
   private esBarGfx!: Phaser.GameObjects.Graphics;
   private isGameOver: boolean = false;
@@ -57,11 +63,11 @@ export class BattleScene extends Phaser.Scene {
 
     this.createProceduralTextures();
 
-    // Map nền
+    // Map sàn
     this.add.grid(mapWidth / 2, mapHeight / 2, mapWidth, mapHeight, 64, 64, 0x161b22, 1, 0x21262d, 1);
 
     this.player = new Player(this, mapWidth / 2, mapHeight / 2, 'Mage');
-    this.player.applyEquippedItemStats(this.inventoryData.equippedItem);
+    this.syncPlayerStats();
 
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
@@ -122,7 +128,7 @@ export class BattleScene extends Phaser.Scene {
 
     // Va chạm: Quái -> Người chơi
     this.physics.add.overlap(this.player, this.monsterPool, (_playerObj, monObj) => {
-      if (this.isGameOver) return;
+      if (this.isGameOver || this.intermissionUI.getIsShowing()) return;
       const monster = monObj as Monster;
       if (!monster.active) return;
 
@@ -147,17 +153,27 @@ export class BattleScene extends Phaser.Scene {
 
     this.createHUD();
 
-    // Khởi tạo Crafting UI
-    this.craftingUI = new CraftingUI(this, this.inventoryData, () => {
-      this.player.applyEquippedItemStats(this.inventoryData.equippedItem);
+    // Khởi tạo các Modal UIs
+    this.craftingUI = new CraftingUI(this, this.inventoryData, () => this.syncPlayerStats());
+    this.passiveTreeUI = new PassiveTreeUI(this, this.passiveTreeManager, () => this.syncPlayerStats());
+
+    this.intermissionUI = new IntermissionUI(
+      this,
+      () => this.startNextWave(),
+      () => this.craftingUI.toggle(),
+      () => this.passiveTreeUI.toggle()
+    );
+
+    // Phím tắt bàn phím
+    this.input.keyboard?.on('keydown-I', () => this.craftingUI.toggle());
+    this.input.keyboard?.on('keydown-P', () => this.passiveTreeUI.toggle());
+    this.input.keyboard?.on('keydown-SPACE', () => {
+      if (this.intermissionUI.getIsShowing()) {
+        this.startNextWave();
+      }
     });
 
-    // Phím [I] mở Hòm đồ / Crafting
-    this.input.keyboard?.on('keydown-I', () => {
-      this.craftingUI.toggle();
-    });
-
-    // Spawner
+    // Spawner lặp lại
     this.time.addEvent({
       delay: 1200,
       callback: this.spawnMonsterWave,
@@ -172,6 +188,11 @@ export class BattleScene extends Phaser.Scene {
       callbackScope: this,
       loop: true,
     });
+  }
+
+  private syncPlayerStats(): void {
+    const bonus = this.passiveTreeManager.calculateTotalBonus();
+    this.player.recalculateTotalStats(this.inventoryData.equippedItem, bonus);
   }
 
   private dropLoot(x: number, y: number, rarity: any): void {
@@ -246,9 +267,9 @@ export class BattleScene extends Phaser.Scene {
       color: '#00ffff',
     }).setScrollFactor(0);
 
-    this.invHintText = this.add.text(20, 76, '[I]: HÒM ĐỒ & CHẾ ĐỒ (CRAFT)', {
+    this.add.text(20, 76, '[I]: HÒM ĐỒ & CRAFT | [P]: CÂY NỘI TẠI', {
       fontFamily: 'monospace',
-      fontSize: '14px',
+      fontSize: '13px',
       fontStyle: 'bold',
       color: '#ffd700',
       backgroundColor: '#000000aa',
@@ -283,7 +304,15 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawnMonsterWave(): void {
-    if (this.isGameOver || !this.waveManager.isWaveActive || this.craftingUI.getIsOpen()) return;
+    if (
+      this.isGameOver || 
+      !this.waveManager.isWaveActive || 
+      this.intermissionUI.getIsShowing() ||
+      this.craftingUI.getIsOpen() ||
+      this.passiveTreeUI.getIsOpen()
+    ) {
+      return;
+    }
 
     const count = 3 + Math.floor(Math.random() * 3);
     const cam = this.cameras.main;
@@ -306,22 +335,38 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private tickWaveTimer(): void {
-    if (this.isGameOver || this.craftingUI.getIsOpen()) return;
+    if (this.isGameOver || this.intermissionUI.getIsShowing()) return;
 
     this.waveManager.timeRemaining--;
     this.timerText.setText(`THỜI GIAN: ${this.waveManager.timeRemaining}s`);
 
     if (this.waveManager.timeRemaining <= 0) {
-      this.waveManager.currentWave++;
-      this.waveManager.timeRemaining = this.waveManager.waveDuration;
-      this.waveText.setText(`ĐỢT: ${this.waveManager.currentWave}`);
+      // Kết thúc wave hiện tại, bước vào Intermission Safe Phase
+      this.waveManager.isWaveActive = false;
 
+      // Xóa sạch quái còn sót
       this.monsterPool.children.each((child) => {
         const mon = child as Monster;
         if (mon.active) mon.kill();
         return true;
       });
+
+      // Tặng 1 Skill Point và hồi đầy Máu/ES
+      this.passiveTreeManager.unspentPoints++;
+      this.player.stats.currentLife = this.player.stats.maxLife;
+      this.player.stats.energyShield = this.player.stats.maxEnergyShield;
+
+      // Hiện bảng Intermission
+      this.intermissionUI.show(this.waveManager.currentWave);
     }
+  }
+
+  private startNextWave(): void {
+    this.intermissionUI.hide();
+    this.waveManager.currentWave++;
+    this.waveManager.timeRemaining = this.waveManager.waveDuration;
+    this.waveManager.isWaveActive = true;
+    this.waveText.setText(`ĐỢT: ${this.waveManager.currentWave}`);
   }
 
   private triggerGameOver(): void {
@@ -352,8 +397,13 @@ export class BattleScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     if (this.isGameOver) return;
 
-    // Khi đang mở bảng Crafting thì tạm dừng di chuyển và tấn công
-    if (this.craftingUI.getIsOpen()) {
+    // Dừng hành động khi mở bất kỳ giao diện modal nào
+    const isUIBlocking = 
+      this.intermissionUI.getIsShowing() || 
+      this.craftingUI.getIsOpen() || 
+      this.passiveTreeUI.getIsOpen();
+
+    if (isUIBlocking) {
       const body = this.player.body as Phaser.Physics.Arcade.Body;
       if (body) body.setVelocity(0, 0);
       return;

@@ -4,6 +4,7 @@ import { Socket, SkillContext, ActiveGem, SupportGem } from '../core/gems/GemTyp
 import { FireballSkill, SplitArrowSkill } from '../core/gems/ActiveGems';
 import { GreaterMultipleProjectiles, AddedFireDamageSupport, PierceSupport } from '../core/gems/SupportGems';
 import { EquipmentItem } from '../core/items/ItemTypes';
+import { PassiveTreeBonus } from '../core/passive/PassiveTreeTypes';
 import { Projectile } from './Projectile';
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
@@ -68,12 +69,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  public applyEquippedItemStats(item: EquipmentItem): void {
+  // Tái tính toán toàn bộ chỉ số từ Base + Trang bị + Cây Nội Tại
+  public recalculateTotalStats(item: EquipmentItem, treeBonus: PassiveTreeBonus): void {
     const base = CLASS_BASE_STATS[this.characterClass];
-    this.stats.armour = base.armour;
-    this.stats.movementSpeed = base.movementSpeed;
-    this.stats.maxLife = base.maxLife;
-    this.stats.maxEnergyShield = base.maxEnergyShield;
+
+    this.stats.maxLife = base.maxLife + treeBonus.flatLife;
+    this.stats.maxEnergyShield = base.maxEnergyShield + treeBonus.flatES;
+    this.stats.armour = base.armour + treeBonus.flatArmour;
+    this.stats.evasion = base.evasion + treeBonus.flatEvasion;
+    this.stats.movementSpeed = base.movementSpeed + treeBonus.movementSpeed;
 
     const allAffixes = [...item.prefixes, ...item.suffixes];
     for (const aff of allAffixes) {
@@ -84,10 +88,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.stats.currentLife = Math.min(this.stats.currentLife, this.stats.maxLife);
-    this.compileSkills(item);
+    this.compileSkills(item, treeBonus);
   }
 
-  public compileSkills(equippedItem?: EquipmentItem): void {
+  public compileSkills(equippedItem?: EquipmentItem, treeBonus?: PassiveTreeBonus): void {
     this.compiledSkills = [];
     const activeSockets = this.sockets.filter((s) => s.gem && 'getInitialContext' in s.gem);
 
@@ -95,6 +99,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     let incDmg = 0;
     let atkSpeedPct = 0;
     let critChance = 0;
+    let critMultiplier = 0;
+    let extraProj = 0;
+    let extraPierce = 0;
 
     if (equippedItem) {
       const allAff = [...equippedItem.prefixes, ...equippedItem.suffixes];
@@ -106,15 +113,33 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
+    if (treeBonus) {
+      atkSpeedPct += treeBonus.attackSpeedPct;
+      critChance += treeBonus.critChance;
+      critMultiplier += treeBonus.critMultiplier;
+      extraProj += treeBonus.extraProjectile;
+      extraPierce += treeBonus.extraPierce;
+    }
+
     for (const activeSock of activeSockets) {
       const activeGem = activeSock.gem as ActiveGem;
       const ctx = activeGem.getInitialContext();
+
+      // Cộng thêm bonus từ Tree tùy theo loại sát thương
+      if (ctx.damageType === 'physical' && treeBonus) {
+        incDmg += treeBonus.incPhysDamage;
+      } else if (ctx.damageType === 'fire' && treeBonus) {
+        incDmg += treeBonus.incFireDamage;
+      }
 
       ctx.addedMinDamage += addedDmg;
       ctx.addedMaxDamage += addedDmg;
       ctx.increasedDamagePercent += incDmg;
       ctx.attackSpeedMultiplier *= (1 + atkSpeedPct / 100);
       ctx.critChance += critChance;
+      ctx.critMultiplier += critMultiplier;
+      ctx.projectileCount += extraProj;
+      ctx.pierceCount += extraPierce;
 
       const linkedSupports = this.sockets.filter(
         (s) => s.linkGroup === activeSock.linkGroup && s.gem && 'apply' in s.gem
