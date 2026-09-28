@@ -7,10 +7,12 @@ export class Monster extends Phaser.Physics.Arcade.Sprite {
   public poeStatsWrapper!: PoEStats;
   private hpBar!: Phaser.GameObjects.Graphics;
   private lastAttackTime: number = 0;
-  private attackCooldown: number = 700; // 700ms cắn 1 lần
+  private attackCooldown: number = 700;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'monster_normal');
+    scene.add.existing(this); // ĐƯA VÀO DANH SÁCH HIỂN THỊ
+    scene.physics.add.existing(this);
     this.hpBar = scene.add.graphics();
   }
 
@@ -28,13 +30,15 @@ export class Monster extends Phaser.Physics.Arcade.Sprite {
     };
 
     this.enableBody(true, x, y, true, true);
+    this.setVisible(true);
     this.setTexture(`monster_${stats.rarity.toLowerCase()}`);
+
+    const size = stats.rarity === 'Boss' ? 44 : stats.rarity === 'Rare' ? 32 : 24;
+    this.setDisplaySize(size, size);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (body) {
-      const size = stats.rarity === 'Boss' ? 44 : stats.rarity === 'Rare' ? 32 : 22;
       body.setSize(size, size);
-      this.setDisplaySize(size, size);
     }
 
     this.hpBar.setVisible(true);
@@ -78,13 +82,11 @@ export class Monster extends Phaser.Physics.Arcade.Sprite {
     const x = this.x - width / 2;
     const y = this.y - (this.displayHeight / 2 + 8);
 
-    // Nền xám
     this.hpBar.fillStyle(0x000000, 0.7);
     this.hpBar.fillRect(x, y, width, height);
 
-    // Máu đỏ / vàng
     const pct = Math.max(0, this.monsterStats.currentLife / this.monsterStats.maxLife);
-    const color = this.monsterStats.rarity === 'Boss' ? 0xff0044 : 0x00ff66;
+    const color = this.monsterStats.rarity === 'Boss' ? 0xff0055 : 0x00ff66;
     this.hpBar.fillStyle(color, 1);
     this.hpBar.fillRect(x, y, width * pct, height);
   }
@@ -93,5 +95,6 @@ export class Monster extends Phaser.Physics.Arcade.Sprite {
     this.hpBar.clear();
     this.hpBar.setVisible(false);
     this.disableBody(true, true);
+    this.setVisible(false);
   }
 }

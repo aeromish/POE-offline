@@ -244,20 +244,29 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createProceduralTextures(): void {
-    const list: { key: string; color: number }[] = [
-      { key: 'monster_normal', color: 0x8b0000 },
-      { key: 'monster_magic', color: 0x4169e1 },
-      { key: 'monster_rare', color: 0xffd700 },
-      { key: 'monster_boss', color: 0x9400d3 },
+    const list = [
+      { key: 'monster_normal', body: 0x991b1b, eye: 0xfef08a, border: 0xef4444 },
+      { key: 'monster_magic',  body: 0x1e40af, eye: 0x67e8f9, border: 0x60a5fa },
+      { key: 'monster_rare',   body: 0x854d0e, eye: 0xffffff, border: 0xfacc15 },
+      { key: 'monster_boss',   body: 0x581c87, eye: 0xff0055, border: 0xd8b4fe },
     ];
 
     list.forEach((item) => {
       if (!this.textures.exists(item.key)) {
         const g = this.make.graphics({ x: 0, y: 0 });
-        g.fillStyle(item.color, 1);
-        g.fillRect(0, 0, 32, 32);
-        g.lineStyle(2, 0xffffff, 0.7);
-        g.strokeRect(0, 0, 32, 32);
+        // Thân quái tròn có viền
+        g.fillStyle(item.body, 1);
+        g.fillCircle(16, 16, 13);
+        g.lineStyle(2, item.border, 1);
+        g.strokeCircle(16, 16, 13);
+        // Cặp sừng
+        g.fillStyle(item.border, 1);
+        g.fillTriangle(7, 8, 12, 13, 5, 14);
+        g.fillTriangle(25, 8, 20, 13, 27, 14);
+        // Cặp mắt phát sáng
+        g.fillStyle(item.eye, 1);
+        g.fillCircle(11, 14, 2.5);
+        g.fillCircle(21, 14, 2.5);
         g.generateTexture(item.key, 32, 32);
         g.destroy();
       }
